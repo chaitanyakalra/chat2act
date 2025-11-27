@@ -51,7 +51,12 @@ function App() {
     <div style={styles.container}>
       <h1 style={styles.header}>API Documentation Uploader</h1>
 
-      <input type="file" onChange={handleFileChange} style={styles.fileInput} />
+      <input
+        type="file"
+        accept=".json,.yaml,.yml,.graphql,.pdf,.md"
+        onChange={handleFileChange}
+        style={styles.fileInput}
+      />
 
       <button onClick={uploadFile} style={styles.button}>
         Upload & Process

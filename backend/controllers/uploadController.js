@@ -15,10 +15,20 @@ export const uploadDoc = async (req, res) => {
         let rawText = "";
 
         // 🔥 Extract text based on file type
-        if (file.mimetype === "application/pdf") {
+        const ext = file.originalname.split('.').pop().toLowerCase();
+
+        if (file.mimetype === "application/pdf" || ext === 'pdf') {
             const data = await pdfParse(file.buffer);
             rawText = data.text;
-        } else if (file.mimetype === "application/json") {
+        } else if (
+            file.mimetype === "application/json" ||
+            ext === 'json' ||
+            ext === 'yaml' ||
+            ext === 'yml' ||
+            ext === 'graphql' ||
+            ext === 'md' ||
+            ext === 'markdown'
+        ) {
             rawText = file.buffer.toString("utf8");
         } else {
             return res.status(400).json({ message: "Unsupported file format" });
