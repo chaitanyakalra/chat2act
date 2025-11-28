@@ -52,9 +52,8 @@ const OnboardingPortal = () => {
   const [isBotTyping, setIsBotTyping] = useState(false);
 
   const steps = [
-    { number: 1, title: 'Knowledge Base', icon: Database },
-    { number: 2, title: 'Access Control', icon: Shield },
-    { number: 3, title: 'Verify Agent', icon: Zap }
+    { number: 1, title: 'Setup & Authentication', icon: Database },
+    { number: 2, title: 'Verify Agent', icon: Zap }
   ];
 
   const authTypes = [
@@ -65,15 +64,28 @@ const OnboardingPortal = () => {
     { id: 'custom', name: 'Custom Header', icon: Code2, description: 'Flexible' }
   ];
 
-  // Real API: Train Agent
+  // Real API: Train Agent and Save Auth Config
   const handleTrainAgent = async () => {
     setIsTraining(true);
     setTrainingProgress(0);
     
     try {
-      // Stage 1: Fetching
+      // Stage 1: Save authentication config first
+      setTrainingStage('Saving authentication config...');
+      setTrainingProgress(10);
+      
+      const authPayload = {
+        authEnabled,
+        authType: authEnabled ? selectedAuthType : null,
+        config: authEnabled ? authConfig[selectedAuthType] : null
+      };
+      
+      await axios.post(`${API_BASE_URL}/api/auth/configure`, authPayload);
+      console.log('✅ Auth configuration saved');
+      
+      // Stage 2: Fetching OpenAPI spec
       setTrainingStage('Fetching OpenAPI Spec...');
-      setTrainingProgress(20);
+      setTrainingProgress(30);
       
       // Prepare payload based on mode
       let payload;
@@ -92,13 +104,13 @@ const OnboardingPortal = () => {
         };
       }
       
-      setTrainingProgress(40);
+      setTrainingProgress(50);
       setTrainingStage('Validating Schema...');
       
       // Call real backend API
       const response = await axios.post(`${API_BASE_URL}/api/knowledge/ingest`, payload);
       
-      setTrainingProgress(70);
+      setTrainingProgress(80);
       setTrainingStage('Generating Vector Embeddings...');
       
       await new Promise(resolve => setTimeout(resolve, 800));
@@ -113,34 +125,6 @@ const OnboardingPortal = () => {
       
       setIsTraining(false);
       setCompletedSteps([...completedSteps, 1]);
-      setTimeout(() => setCurrentStep(2), 500);
-      
-    } catch (error) {
-      console.error('❌ Knowledge ingestion failed:', error);
-      setTrainingStage('Error: ' + (error.response?.data?.message || error.message));
-      setIsTraining(false);
-      
-      // Show error to user
-      alert('Failed to ingest knowledge: ' + (error.response?.data?.message || error.message));
-    }
-  };
-
-  // Real API: Save Auth Config
-  const handleSaveAuthConfig = async () => {
-    try {
-      const payload = {
-        authEnabled,
-        authType: authEnabled ? selectedAuthType : null,
-        config: authEnabled ? authConfig[selectedAuthType] : null
-      };
-      
-      // Call real backend API
-      const response = await axios.post(`${API_BASE_URL}/api/auth/configure`, payload);
-      
-      console.log('✅ Auth configuration saved:', response.data);
-      
-      setCompletedSteps([...completedSteps, 2]);
-      setCurrentStep(3);
       
       // Initialize chat
       setChatMessages([
@@ -151,11 +135,19 @@ const OnboardingPortal = () => {
         }
       ]);
       
+      setTimeout(() => setCurrentStep(2), 500);
+      
     } catch (error) {
-      console.error('❌ Auth configuration failed:', error);
-      alert('Failed to save authentication config: ' + (error.response?.data?.message || error.message));
+      console.error('❌ Setup failed:', error);
+      setTrainingStage('Error: ' + (error.response?.data?.message || error.message));
+      setIsTraining(false);
+      
+      // Show error to user
+      alert('Failed to complete setup: ' + (error.response?.data?.message || error.message));
     }
   };
+
+  // This function is no longer needed - auth is handled in handleTrainAgent
 
   // Real API: Execute Agent Query
   const handleSendMessage = async () => {
@@ -277,13 +269,13 @@ const OnboardingPortal = () => {
           ))}
         </div>
 
-        {/* Step 1: Knowledge Base */}
+        {/* Step 1: Knowledge Base + Authentication */}
         {currentStep === 1 && (
-          <div className="max-w-2xl mx-auto">
+          <div className="max-w-3xl mx-auto">
             <div className="bg-white rounded-xl border border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-8">
               <div className="mb-6">
-                <h2 className="text-2xl font-bold text-slate-900 mb-2">Knowledge Ingestion</h2>
-                <p className="text-slate-500">Connect your API documentation to train the AI agent</p>
+                <h2 className="text-2xl font-bold text-slate-900 mb-2">Setup & Authentication</h2>
+                <p className="text-slate-500">Connect your API documentation and configure authentication</p>
               </div>
 
               {/* Toggle Mode */}
@@ -360,6 +352,232 @@ const OnboardingPortal = () => {
                 </div>
               )}
 
+              {/* Authentication Section - Only show for URL mode */}
+              {knowledgeMode === 'url' && (
+                <div className="mb-6 p-6 bg-gray-50/50 rounded-lg border border-gray-200">
+                  <h3 className="text-sm font-semibold text-slate-500 uppercase mb-4">API Authentication (Optional)</h3>
+                  
+                  {/* Master Toggle */}
+                  <div className="flex items-center justify-between p-4 bg-white rounded-lg mb-4">
+                    <div>
+                      <h4 className="font-semibold text-slate-900">Enable Authentication</h4>
+                      <p className="text-sm text-slate-500">Required if your API spec URL needs auth</p>
+                    </div>
+                    <button
+                      onClick={() => setAuthEnabled(!authEnabled)}
+                      className={`relative w-14 h-7 rounded-full transition-all ${
+                        authEnabled ? 'bg-indigo-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <div className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full transition-transform ${
+                        authEnabled ? 'translate-x-7' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
+
+                  {authEnabled && (
+                    <>
+                      {/* Auth Type Grid */}
+                      <div className="grid grid-cols-3 gap-3 mb-4">
+                        {authTypes.map((type) => {
+                          const Icon = type.icon;
+                          return (
+                            <button
+                              key={type.id}
+                              onClick={() => setSelectedAuthType(type.id)}
+                              className={`p-3 rounded-lg border-2 transition-all text-left ${
+                                selectedAuthType === type.id
+                                  ? 'bg-indigo-50 border-indigo-600'
+                                  : 'bg-white border-gray-200 hover:border-gray-300'
+                              }`}
+                            >
+                              <Icon className={`w-4 h-4 mb-1 ${
+                                selectedAuthType === type.id ? 'text-indigo-600' : 'text-slate-400'
+                              }`} />
+                              <div className={`font-semibold text-xs mb-0.5 ${
+                                selectedAuthType === type.id ? 'text-indigo-900' : 'text-slate-900'
+                              }`}>
+                                {type.name}
+                              </div>
+                              <div className="text-xs text-slate-500">{type.description}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Configuration Form */}
+                      <div className="p-4 bg-white rounded-lg border border-gray-200">
+                        {selectedAuthType === 'apiKey' && (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Key Name</label>
+                              <input
+                                type="text"
+                                value={authConfig.apiKey.keyName}
+                                onChange={(e) => setAuthConfig({
+                                  ...authConfig,
+                                  apiKey: { ...authConfig.apiKey, keyName: e.target.value }
+                                })}
+                                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                                placeholder="X-API-Key"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Key Value</label>
+                              <input
+                                type="password"
+                                value={authConfig.apiKey.keyValue}
+                                onChange={(e) => setAuthConfig({
+                                  ...authConfig,
+                                  apiKey: { ...authConfig.apiKey, keyValue: e.target.value }
+                                })}
+                                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                                placeholder="••••••••"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {selectedAuthType === 'bearer' && (
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Bearer Token</label>
+                            <input
+                              type="password"
+                              value={authConfig.bearer.token}
+                              onChange={(e) => setAuthConfig({
+                                ...authConfig,
+                                bearer: { token: e.target.value }
+                              })}
+                              className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                            />
+                          </div>
+                        )}
+
+                        {selectedAuthType === 'basic' && (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Username</label>
+                              <input
+                                type="text"
+                                value={authConfig.basic.username}
+                                onChange={(e) => setAuthConfig({
+                                  ...authConfig,
+                                  basic: { ...authConfig.basic, username: e.target.value }
+                                })}
+                                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                                placeholder="admin"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Password</label>
+                              <input
+                                type="password"
+                                value={authConfig.basic.password}
+                                onChange={(e) => setAuthConfig({
+                                  ...authConfig,
+                                  basic: { ...authConfig.basic, password: e.target.value }
+                                })}
+                                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                                placeholder="••••••••"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {selectedAuthType === 'oauth2' && (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Client ID</label>
+                              <input
+                                type="text"
+                                value={authConfig.oauth2.clientId}
+                                onChange={(e) => setAuthConfig({
+                                  ...authConfig,
+                                  oauth2: { ...authConfig.oauth2, clientId: e.target.value }
+                                })}
+                                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                                placeholder="your-client-id"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Client Secret</label>
+                              <input
+                                type="password"
+                                value={authConfig.oauth2.clientSecret}
+                                onChange={(e) => setAuthConfig({
+                                  ...authConfig,
+                                  oauth2: { ...authConfig.oauth2, clientSecret: e.target.value }
+                                })}
+                                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                                placeholder="••••••••"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Auth URL</label>
+                              <input
+                                type="url"
+                                value={authConfig.oauth2.authUrl}
+                                onChange={(e) => setAuthConfig({
+                                  ...authConfig,
+                                  oauth2: { ...authConfig.oauth2, authUrl: e.target.value }
+                                })}
+                                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                                placeholder="https://auth.example.com"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Token URL</label>
+                              <input
+                                type="url"
+                                value={authConfig.oauth2.tokenUrl}
+                                onChange={(e) => setAuthConfig({
+                                  ...authConfig,
+                                  oauth2: { ...authConfig.oauth2, tokenUrl: e.target.value }
+                                })}
+                                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                                placeholder="https://token.example.com"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {selectedAuthType === 'custom' && (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Header Name</label>
+                              <input
+                                type="text"
+                                value={authConfig.custom.headerName}
+                                onChange={(e) => setAuthConfig({
+                                  ...authConfig,
+                                  custom: { ...authConfig.custom, headerName: e.target.value }
+                                })}
+                                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                                placeholder="X-Custom-Auth"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Header Value</label>
+                              <input
+                                type="password"
+                                value={authConfig.custom.headerValue}
+                                onChange={(e) => setAuthConfig({
+                                  ...authConfig,
+                                  custom: { ...authConfig.custom, headerValue: e.target.value }
+                                })}
+                                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                                placeholder="••••••••"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* Training Progress */}
               {isTraining && (
                 <div className="mb-6 p-4 bg-indigo-50/50 border border-indigo-100 rounded-lg">
@@ -382,13 +600,13 @@ const OnboardingPortal = () => {
                 disabled={isTraining || (knowledgeMode === 'url' && !apiUrl) || (knowledgeMode === 'file' && !uploadedFile)}
                 className="w-full py-3.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md"
               >
-                {isTraining ? 'Training Agent...' : 'Train Agent'}
+                {isTraining ? 'Setting up agent...' : 'Train Agent & Continue'}
               </button>
             </div>
           </div>
         )}
 
-        {/* Step 2: Access Control */}
+        {/* Step 2: Verify Agent */}
         {currentStep === 2 && (
           <div className="max-w-3xl mx-auto">
             <div className="bg-white rounded-xl border border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-8">
@@ -754,7 +972,7 @@ const OnboardingPortal = () => {
               <div className="p-6 bg-gray-50 border-t border-gray-200">
                 <button
                   onClick={() => {
-                    setCompletedSteps([...completedSteps, 3]);
+                    setCompletedSteps([...completedSteps, 2]);
                     alert('🎉 Onboarding Complete! Your AI agent is ready to deploy.');
                   }}
                   className="w-full py-3.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-2"
