@@ -3,8 +3,6 @@ import axios from "axios";
 import OnboardingPortal from "./Components/OnboardingPortal";
 
 function App() {
-  
-
   // const handleFileChange = (e) => {
   //   setFile(e.target.files[0]);
   // };
@@ -46,11 +44,7 @@ function App() {
   //   }
   // };
 
-  return (
-    <OnboardingPortal />
-  );
+  return <OnboardingPortal />;
 }
-
-
 
 export default App;

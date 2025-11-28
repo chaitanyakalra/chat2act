@@ -5,6 +5,7 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 import knowledgeRoutes from "./routes/knowledgeRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import agentRoutes from "./routes/agentRoutes.js";
+import processingRoutes from "./routes/processingRoutes.js";
 import mongoose from "mongoose";
 
 dotenv.config();
@@ -31,5 +32,19 @@ app.use("/api/knowledge", knowledgeRoutes);
 app.use("/api", knowledgeRoutes); // Also mount /api/skills directly
 app.use("/api/auth", authRoutes);
 app.use("/api/agent", agentRoutes);
+app.use("/api/upload-doc", uploadRoutes);
+app.use("/api/processing", processingRoutes);
 
-app.listen(5000, () => console.log("Server running on port 5000"));
+mongoose.connect(process.env.MONGO_URI, {
+  tls: true,
+  tlsAllowInvalidCertificates: true,
+  serverSelectionTimeoutMS: 10000,
+})
+  .then(() => {
+    console.log("MongoDB Connected");
+    app.listen(5000, () => console.log("Server running on port 5000"));
+  })
+  .catch(err => {
+    console.error("MongoDB Connection Error:", err);
+    process.exit(1);
+  });
