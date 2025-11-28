@@ -15,3 +15,4 @@ router.get("/intent-mappings/:intentMappingId", getIntentMappings);
 
 export default router;
 
+
