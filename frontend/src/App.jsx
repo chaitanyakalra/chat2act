@@ -18,6 +18,7 @@ function App() {
 
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("autoProcess", "true");
 
     try {
       setLoading(true);
