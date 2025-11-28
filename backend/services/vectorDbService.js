@@ -74,8 +74,14 @@ export class VectorDbService {
 
     /**
      * Create vector chunks from API index and intent mappings
+     * @param {Object} apiIndex - The API index document
+     * @param {Object} intentMappings - The intent mappings document
+     * @param {String} namespace - Pinecone namespace for organization isolation (e.g., zohoOrgId)
      */
-    async createChunks(apiIndex, intentMappings) {
+    async createChunks(apiIndex, intentMappings, namespace) {
+        if (!namespace) {
+            throw new Error('Namespace is required for multi-tenancy support');
+        }
         const chunks = [];
 
         // 1. Chunk endpoint descriptions
@@ -264,6 +270,8 @@ export class VectorDbService {
                 const vectorChunk = new VectorChunk({
                     chunkId,
                     apiIndexId: apiIndex._id,
+                    zohoOrgId: apiIndex.zohoOrgId,
+                    namespace: namespace,
                     endpointId: chunk.endpointId,
                     intentId: chunk.intentId,
                     chunkType: chunk.chunkType,
@@ -280,16 +288,17 @@ export class VectorDbService {
             }
         }
 
-        // 5. Batch upsert vectors to Pinecone
+        // 5. Batch upsert vectors to Pinecone with namespace isolation
         if (vectorsToUpsert.length > 0) {
             try {
                 // Pinecone supports up to 100 vectors per upsert
                 const batchSize = 100;
                 for (let i = 0; i < vectorsToUpsert.length; i += batchSize) {
                     const batch = vectorsToUpsert.slice(i, i + batchSize);
-                    await this.index.upsert(batch);
+                    // Use namespace for organization isolation
+                    await this.index.namespace(namespace).upsert(batch);
                 }
-                console.log(`Upserted ${vectorsToUpsert.length} vectors to Pinecone`);
+                console.log(`Upserted ${vectorsToUpsert.length} vectors to Pinecone namespace: ${namespace}`);
             } catch (error) {
                 console.error('Error upserting vectors to Pinecone:', error);
                 throw error;
@@ -411,8 +420,15 @@ export class VectorDbService {
 
     /**
      * Search chunks by similarity using Pinecone
+     * @param {String} query - The search query
+     * @param {String} apiIndexId - The API index ID to filter by
+     * @param {String} namespace - Pinecone namespace for organization isolation
+     * @param {Number} limit - Maximum number of results to return
      */
-    async searchChunks(query, apiIndexId, limit = 10) {
+    async searchChunks(query, apiIndexId, namespace, limit = 10) {
+        if (!namespace) {
+            throw new Error('Namespace is required for multi-tenancy support');
+        }
         try {
             // Initialize index if needed
             if (!this.index) {
@@ -422,28 +438,31 @@ export class VectorDbService {
             // Generate query embedding
             const queryEmbedding = await this.generateEmbedding(query);
 
-            // Query Pinecone
-            // Note: Filtering requires Pinecone paid plan. For free tier, we'll filter in code.
+            // Query Pinecone with namespace isolation
+            // Namespace provides organization-level isolation
             const queryOptions = {
                 vector: queryEmbedding,
-                topK: limit * 3, // Get more results to filter by apiIndexId
+                topK: limit,
                 includeMetadata: true
             };
 
-            // Add filter if supported (paid plans)
+            // Add metadata filter for apiIndexId if supported (paid plans)
             if (process.env.PINECONE_USE_FILTER === 'true') {
                 queryOptions.filter = {
                     apiIndexId: { $eq: apiIndexId.toString() }
                 };
             }
 
-            const queryResponse = await this.index.query(queryOptions);
+            // Query specific namespace for organization isolation
+            const queryResponse = await this.index.namespace(namespace).query(queryOptions);
+            console.log(`Searched namespace: ${namespace}, found ${queryResponse.matches?.length || 0} results`);
 
             // Get matching chunks from MongoDB using Pinecone IDs
             const VectorChunk = (await import('../models/VectorChunk.js')).default;
 
-            // Filter results by apiIndexId if not using Pinecone filter
-            let matches = queryResponse.matches;
+            // Namespace already provides organization isolation
+            // Filter results by apiIndexId if not using Pinecone metadata filter
+            let matches = queryResponse.matches || [];
             if (process.env.PINECONE_USE_FILTER !== 'true') {
                 matches = matches.filter(match =>
                     match.metadata?.apiIndexId === apiIndexId.toString()
@@ -457,9 +476,11 @@ export class VectorDbService {
             }
 
             // Fetch full chunk data from MongoDB
+            // Filter by namespace for additional security
             const chunks = await VectorChunk.find({
                 pineconeId: { $in: pineconeIds },
-                apiIndexId: apiIndexId
+                apiIndexId: apiIndexId,
+                namespace: namespace
             });
 
             // Map Pinecone results with scores to MongoDB chunks
