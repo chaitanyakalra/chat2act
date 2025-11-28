@@ -42,3 +42,4 @@ intentMappingSchema.index({ 'intents.subIntents.endpointIds': 1 });
 
 export default mongoose.model("IntentMapping", intentMappingSchema);
 
+
