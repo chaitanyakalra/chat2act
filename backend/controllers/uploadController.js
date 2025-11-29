@@ -17,10 +17,18 @@ function getPipeline() {
 export const uploadDoc = async (req, res) => {
   try {
     const file = req.file;
-    const { autoProcess } = req.body; // Optional: auto-process after upload
+    const { autoProcess, zohoOrgId, organizationName } = req.body; // Added zohoOrgId and organizationName
 
     if (!file) {
       return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    // Validate required fields for multi-tenancy
+    if (!zohoOrgId) {
+      return res.status(400).json({
+        message: "zohoOrgId is required for multi-tenancy support",
+        hint: "Please provide the Zoho organization ID in the request body",
+      });
     }
 
     let rawText = "";
@@ -43,11 +51,9 @@ export const uploadDoc = async (req, res) => {
     ) {
       rawText = file.buffer.toString("utf8");
     } else {
-      return res
-        .status(400)
-        .json({
-          message: "Unsupported file format. Supported: JSON, YAML, PDF",
-        });
+      return res.status(400).json({
+        message: "Unsupported file format. Supported: JSON, YAML, PDF",
+      });
     }
 
     // 🔥 Save to MongoDB

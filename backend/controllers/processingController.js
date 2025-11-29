@@ -120,3 +120,5 @@ export const getIntentMappings = async (req, res) => {
     }
 };
 
+
+
