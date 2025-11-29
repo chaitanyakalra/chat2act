@@ -6,8 +6,18 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export class LLMService {
     constructor() {
-        this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        this.model = null;
+        this.genAI = null;
+    }
+
+    _init() {
+        if (!this.model) {
+            if (!process.env.GEMINI_API_KEY) {
+                console.error("❌ GEMINI_API_KEY is missing from environment variables");
+            }
+            this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+            this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        }
     }
 
     /**
@@ -19,6 +29,7 @@ export class LLMService {
             const userPrompt = this.buildTagGenerationPrompt(endpoints);
             const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
+            this._init();
             const result = await this.model.generateContent(fullPrompt);
             const response = await result.response;
             const text = response.text();
@@ -45,6 +56,7 @@ export class LLMService {
             const userPrompt = this.buildIntentMappingPrompt(endpoints, apiMetadata);
             const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
+            this._init();
             const result = await this.model.generateContent(fullPrompt);
             const response = await result.response;
             const text = response.text();
