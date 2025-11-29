@@ -6,6 +6,7 @@ import knowledgeRoutes from "./routes/knowledgeRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import agentRoutes from "./routes/agentRoutes.js";
 import processingRoutes from "./routes/processingRoutes.js";
+import orgRoutes from "./routes/orgRoutes.js";
 import mongoose from "mongoose";
 
 dotenv.config();
@@ -32,7 +33,7 @@ app.use("/api/knowledge", knowledgeRoutes);
 app.use("/api", knowledgeRoutes); // Also mount /api/skills directly
 app.use("/api/auth", authRoutes);
 app.use("/api/agent", agentRoutes);
-app.use("/api/upload-doc", uploadRoutes);
+app.use("/api/org", orgRoutes);
 app.use("/api/processing", processingRoutes);
 
 mongoose.connect(process.env.MONGO_URI, {

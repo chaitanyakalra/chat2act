@@ -10,7 +10,7 @@ import axios from 'axios';
  */
 export const executeAgent = async (req, res) => {
   try {
-    const { userQuery, knowledgeBaseId } = req.body;
+    const { userQuery, knowledgeBaseId, zohoOrgId } = req.body;
     
     if (!userQuery) {
       return res.status(400).json({
@@ -21,6 +21,9 @@ export const executeAgent = async (req, res) => {
     
     console.log(`🤖 Agent executing query: "${userQuery}"`);
     console.log(`📋 Knowledge Base ID: ${knowledgeBaseId || 'NOT PROVIDED - will use all endpoints'}`);
+    if (zohoOrgId) {
+      console.log(`🏢 Zoho Org ID: ${zohoOrgId}`);
+    }
     
     // Step 1: Get available endpoints from ApiIndex
     let availableEndpoints = [];
@@ -28,7 +31,12 @@ export const executeAgent = async (req, res) => {
     
     if (knowledgeBaseId) {
       // Get specific API index
-      const apiIndex = await ApiIndex.findById(knowledgeBaseId);
+      const query = { _id: knowledgeBaseId };
+      if (zohoOrgId) {
+        query.zohoOrgId = zohoOrgId; // Filter by org for security
+      }
+      
+      const apiIndex = await ApiIndex.findOne(query);
       if (apiIndex) {
         // Extract base URL from metadata
         console.log("apiIndex" , apiIndex.metadata);
@@ -80,7 +88,7 @@ export const executeAgent = async (req, res) => {
     console.log(`✅ Matched to: ${match.endpoint.method} ${match.endpoint.endpoint} (confidence: ${match.confidence})`);
     
     // Step 3: Get authentication configuration
-    const authConfig = await getDecryptedAuthConfig();
+    const authConfig = await getDecryptedAuthConfig(zohoOrgId);
     
     // Step 4: Execute API call (MOCK MODE - return mock data)
     const USE_MOCK_MODE = process.env.USE_MOCK_MODE === 'true';

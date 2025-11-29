@@ -16,7 +16,14 @@ const SENSITIVE_FIELDS = {
  */
 export const configureAuth = async (req, res) => {
   try {
-    const { authEnabled, authType, config } = req.body;
+    const { authEnabled, authType, config, zohoOrgId } = req.body;
+    
+    if (!zohoOrgId) {
+      return res.status(400).json({
+        success: false,
+        message: 'zohoOrgId is required'
+      });
+    }
     
     if (authEnabled && !authType) {
       return res.status(400).json({
@@ -46,10 +53,11 @@ export const configureAuth = async (req, res) => {
       console.log(`🔒 Encrypted ${sensitiveFields.length} sensitive fields`);
     }
     
-    // Delete existing config and create new one (single config approach)
-    await AuthConfig.deleteMany({});
+    // Delete existing config for this org and create new one
+    await AuthConfig.deleteMany({ zohoOrgId });
     
     const authConfig = await AuthConfig.create({
+      zohoOrgId,
       authEnabled,
       authType: authEnabled ? authType : null,
       encryptedConfig: encryptedData.encryptedConfig,
@@ -86,7 +94,16 @@ export const configureAuth = async (req, res) => {
  */
 export const getAuthConfig = async (req, res) => {
   try {
-    const authConfig = await AuthConfig.findOne().sort({ createdAt: -1 });
+    const { zohoOrgId } = req.query;
+    
+    if (!zohoOrgId) {
+      return res.status(400).json({
+        success: false,
+        message: 'zohoOrgId is required'
+      });
+    }
+
+    const authConfig = await AuthConfig.findOne({ zohoOrgId }).sort({ createdAt: -1 });
     
     if (!authConfig) {
       return res.json({
@@ -152,9 +169,11 @@ export const getAuthConfig = async (req, res) => {
  * Get decrypted auth config for internal use (not exposed via API)
  * Used by agent executor to make authenticated API calls
  */
-export const getDecryptedAuthConfig = async () => {
+export const getDecryptedAuthConfig = async (zohoOrgId) => {
   try {
-    const authConfig = await AuthConfig.findOne().sort({ createdAt: -1 });
+    if (!zohoOrgId) return null;
+    
+    const authConfig = await AuthConfig.findOne({ zohoOrgId }).sort({ createdAt: -1 });
     
     if (!authConfig || !authConfig.authEnabled) {
       return null;

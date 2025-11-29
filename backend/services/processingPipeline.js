@@ -42,6 +42,7 @@ export class ProcessingPipeline {
       if (!zohoOrgId) {
         throw new Error("zohoOrgId is required for multi-tenancy support");
       }
+      const namespace = zohoOrgId;
       log(`Starting Phase 1 processing for doc ${apiDocId}`);
 
       // Step 1: Parse API documentation

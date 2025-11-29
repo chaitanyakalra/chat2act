@@ -7,7 +7,7 @@ import ApiIndex from '../models/ApiIndex.js';
  */
 export const ingestKnowledge = async (req, res) => {
   try {
-    const { sourceType, sourceUrl, fileContent, fileName, baseUrlOverride } = req.body;
+    const { sourceType, sourceUrl, fileContent, fileName, baseUrlOverride, zohoOrgId, organizationName, authConfig } = req.body;
     
     if (!sourceType || (sourceType === 'url' && !sourceUrl) || (sourceType === 'file' && !fileContent)) {
       return res.status(400).json({
@@ -16,7 +16,16 @@ export const ingestKnowledge = async (req, res) => {
       });
     }
     
+    // Validate zohoOrgId is provided
+    if (!zohoOrgId) {
+      return res.status(400).json({
+        success: false,
+        message: 'zohoOrgId is required for multi-tenancy support'
+      });
+    }
+    
     console.log(`📥 Ingesting knowledge from ${sourceType}: ${sourceUrl || fileName}`);
+    console.log(`🏢 Zoho Org ID: ${zohoOrgId}`);
     if (baseUrlOverride) {
       console.log(`🌐 Base URL override provided: ${baseUrlOverride}`);
     }
@@ -27,7 +36,63 @@ export const ingestKnowledge = async (req, res) => {
     
     if (sourceType === 'url') {
       // Fetch from URL
-      const response = await fetch(sourceUrl);
+      // Fetch from URL with optional authentication
+      const headers = {};
+      
+      if (authConfig) {
+        if (authConfig.type === 'bearer' && authConfig.token) {
+          headers['Authorization'] = `Bearer ${authConfig.token}`;
+        } else if (authConfig.type === 'basic' && authConfig.username && authConfig.password) {
+          const credentials = Buffer.from(`${authConfig.username}:${authConfig.password}`).toString('base64');
+          headers['Authorization'] = `Basic ${credentials}`;
+        } else if (authConfig.type === 'apiKey' && authConfig.location === 'header' && authConfig.keyName && authConfig.keyValue) {
+          headers[authConfig.keyName] = authConfig.keyValue;
+        } else if (authConfig.type === 'custom' && authConfig.headerName && authConfig.headerValue) {
+          headers[authConfig.headerName] = authConfig.headerValue;
+        } else if (authConfig.type === 'oauth2' && authConfig.clientId && authConfig.clientSecret && authConfig.tokenUrl) {
+          try {
+            console.log(`🔑 Fetching OAuth2 token from ${authConfig.tokenUrl}`);
+            
+            const bodyParams = new URLSearchParams();
+            bodyParams.append('grant_type', 'client_credentials');
+            
+            const requestHeaders = {
+              'Content-Type': 'application/x-www-form-urlencoded'
+            };
+
+            // Check client authentication method (header vs body)
+            if (authConfig.clientAuthentication === 'body') {
+              console.log('📝 Sending client credentials in body');
+              bodyParams.append('client_id', authConfig.clientId);
+              bodyParams.append('client_secret', authConfig.clientSecret);
+            } else {
+              // Default to Basic Auth header
+              console.log('📝 Sending client credentials in header');
+              requestHeaders['Authorization'] = `Basic ${Buffer.from(`${authConfig.clientId}:${authConfig.clientSecret}`).toString('base64')}`;
+            }
+
+            const tokenResponse = await fetch(authConfig.tokenUrl, {
+              method: 'POST',
+              headers: requestHeaders,
+              body: bodyParams.toString()
+            });
+            
+            if (tokenResponse.ok) {
+              const tokenData = await tokenResponse.json();
+              if (tokenData.access_token) {
+                headers['Authorization'] = `Bearer ${tokenData.access_token}`;
+                console.log('✅ OAuth2 token obtained successfully');
+              }
+            } else {
+              console.error('❌ Failed to fetch OAuth2 token:', await tokenResponse.text());
+            }
+          } catch (error) {
+            console.error('❌ OAuth2 token fetch error:', error);
+          }
+        }
+      }
+      
+      const response = await fetch(sourceUrl, { headers });
       if (!response.ok) {
         throw new Error(`Failed to fetch from URL: ${response.statusText}`);
       }
@@ -53,7 +118,7 @@ export const ingestKnowledge = async (req, res) => {
     
     // Use ProcessingPipeline for advanced processing
     const pipeline = new ProcessingPipeline();
-    const result = await pipeline.process(tempDocId, rawText, mimeType, baseUrlOverride);
+    const result = await pipeline.process(tempDocId, rawText, mimeType, baseUrlOverride, zohoOrgId, organizationName);
     
     if (!result.success) {
       return res.status(400).json({

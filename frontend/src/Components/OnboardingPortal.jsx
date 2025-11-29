@@ -16,14 +16,15 @@ import {
   Shield,
   Database,
   Key,
-  FileText
+  FileText,
+  Building2
 } from 'lucide-react';
 
 // Backend API base URL
 const API_BASE_URL = 'http://localhost:5000';
 
 const OnboardingPortal = () => {
-  const [currentStep, setCurrentStep] = useState(1);
+  const [currentStep, setCurrentStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState([]);
   
   // Step 1: Knowledge Base State
@@ -34,12 +35,17 @@ const OnboardingPortal = () => {
   const [isTraining, setIsTraining] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [trainingStage, setTrainingStage] = useState('');
+  // Organization States
+  const [zohoOrgId, setZohoOrgId] = useState('');
+  const [orgExists, setOrgExists] = useState(false);
+  const [orgData, setOrgData] = useState(null);
+  const [isCheckingOrg, setIsCheckingOrg] = useState(false);
   
   // Step 2: Access Control State
   const [authEnabled, setAuthEnabled] = useState(false);
   const [selectedAuthType, setSelectedAuthType] = useState('oauth2');
   const [authConfig, setAuthConfig] = useState({
-    oauth2: { clientId: '', clientSecret: '', authUrl: '', tokenUrl: '' },
+    oauth2: { clientId: '', clientSecret: '', tokenUrl: '', clientAuthentication: 'header' },
     apiKey: { keyName: '', keyValue: '', location: 'header' },
     bearer: { token: '' },
     basic: { username: '', password: '' },
@@ -54,10 +60,10 @@ const OnboardingPortal = () => {
   const [isBotTyping, setIsBotTyping] = useState(false);
 
   const steps = [
-    { number: 1, title: 'Setup & Authentication', icon: Database },
-    { number: 2, title: 'Verify Agent', icon: Zap }
-  ];
-
+  { number: 0, title: 'Organization Setup', icon: Building2 },
+  { number: 1, title: 'Setup & Authentication', icon: Database },
+  { number: 2, title: 'Verify Agent', icon: Zap }
+];
   const authTypes = [
     { id: 'oauth2', name: 'OAuth 2.0', icon: Lock, description: 'Industry standard' },
     { id: 'apiKey', name: 'API Key', icon: Key, description: 'Simple & secure' },
@@ -79,7 +85,8 @@ const OnboardingPortal = () => {
       const authPayload = {
         authEnabled,
         authType: authEnabled ? selectedAuthType : null,
-        config: authEnabled ? authConfig[selectedAuthType] : null
+        config: authEnabled ? authConfig[selectedAuthType] : null,
+        zohoOrgId: zohoOrgId // ADD THIS
       };
       
       await axios.post(`${API_BASE_URL}/api/auth/configure`, authPayload);
@@ -95,7 +102,12 @@ const OnboardingPortal = () => {
         payload = {
           sourceType: 'url',
           sourceUrl: apiUrl,
-          baseUrlOverride: baseUrlOverride || null
+          baseUrlOverride: baseUrlOverride || null,
+          zohoOrgId: zohoOrgId, // ADD THIS
+          authConfig: authEnabled ? {
+            type: selectedAuthType,
+            ...authConfig[selectedAuthType]
+          } : null
         };
       } else {
         // Read file content
@@ -104,7 +116,8 @@ const OnboardingPortal = () => {
           sourceType: 'file',
           fileContent: fileContent,
           fileName: uploadedFile.name,
-          baseUrlOverride: baseUrlOverride || null
+          baseUrlOverride: baseUrlOverride || null,
+          zohoOrgId: zohoOrgId // ADD THIS
         };
       }
       
@@ -153,6 +166,47 @@ const OnboardingPortal = () => {
     }
   };
 
+
+  //orgid frontend
+
+  const handleVerifyOrg = async () => {
+  if (!zohoOrgId.trim()) {
+    alert('Please enter your Zoho Organization ID');
+    return;
+  }
+  
+  setIsCheckingOrg(true);
+  
+  try {
+    const response = await axios.get(`${API_BASE_URL}/api/org/check/${zohoOrgId}`);
+    
+    if (response.data.success && response.data.exists) {
+      // Existing org - skip to verification
+      setOrgExists(true);
+      setOrgData(response.data.data);
+      setKnowledgeBaseId(response.data.data.knowledgeBaseId);
+      setLearnedSkills(response.data.data.skills);
+      setCompletedSteps([0, 1]);
+      setChatMessages([{
+        role: 'bot',
+        content: `Welcome back! Loaded ${response.data.data.apiTitle}`,
+        timestamp: new Date()
+      }]);
+      setTimeout(() => setCurrentStep(2), 500);
+    } else {
+      // New org - proceed to onboarding
+      setOrgExists(false);
+      setCompletedSteps([0]);
+      setTimeout(() => setCurrentStep(1), 500);
+    }
+  } catch (error) {
+    console.error('Error checking org:', error);
+    alert('Failed to verify organization');
+  } finally {
+    setIsCheckingOrg(false);
+  }
+};
+
   // This function is no longer needed - auth is handled in handleTrainAgent
 
   // Real API: Execute Agent Query
@@ -169,7 +223,8 @@ const OnboardingPortal = () => {
       // Call real backend API
       const response = await axios.post(`${API_BASE_URL}/api/agent/execute`, {
         userQuery: currentQuery,
-        knowledgeBaseId: knowledgeBaseId // Pass the knowledge base ID
+        knowledgeBaseId: knowledgeBaseId, // Pass the knowledge base ID
+        zohoOrgId: zohoOrgId  // ADD THIS
       });
       
       if (response.data.success) {
@@ -275,6 +330,55 @@ const OnboardingPortal = () => {
             </React.Fragment>
           ))}
         </div>
+
+
+        {currentStep === 0 && (
+  <div className="max-w-3xl mx-auto">
+    <div className="bg-white rounded-xl border border-gray-200 shadow p-8">
+      <h2 className="text-2xl font-bold text-slate-900 mb-2">
+        Organization Setup
+      </h2>
+      <p className="text-slate-500 mb-6">
+        Enter your Zoho Organization ID to get started
+      </p>
+      
+      {/* Org ID Input */}
+      <div className="mb-6">
+        <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+          Zoho Organization ID
+        </label>
+        <input
+          type="text"
+          value={zohoOrgId}
+          onChange={(e) => setZohoOrgId(e.target.value)}
+          placeholder="Enter your Zoho Org ID"
+          className="w-full px-4 py-3.5 bg-white border border-gray-200 rounded-lg"
+        />
+      </div>
+      
+      {/* Mock Instructions (Collapsible) */}
+      <details className="mb-6 p-4 bg-gray-50 rounded-lg">
+        <summary className="cursor-pointer font-semibold">
+          How to get your Zoho Org ID
+        </summary>
+        <ol className="mt-4 space-y-2 text-sm text-slate-600">
+          <li>1. Log in to your Zoho account</li>
+          <li>2. Navigate to Settings → Organization</li>
+          <li>3. Copy your Organization ID</li>
+        </ol>
+      </details>
+      
+      {/* Verify Button */}
+      <button
+        onClick={handleVerifyOrg}
+        disabled={isCheckingOrg || !zohoOrgId.trim()}
+        className="w-full py-3.5 bg-indigo-600 text-white rounded-lg font-semibold"
+      >
+        {isCheckingOrg ? 'Verifying...' : 'Verify & Continue'}
+      </button>
+    </div>
+  </div>
+)}
 
         {/* Step 1: Knowledge Base + Authentication */}
         {currentStep === 1 && (
@@ -546,19 +650,7 @@ const OnboardingPortal = () => {
                                 placeholder="••••••••"
                               />
                             </div>
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Auth URL</label>
-                              <input
-                                type="url"
-                                value={authConfig.oauth2.authUrl}
-                                onChange={(e) => setAuthConfig({
-                                  ...authConfig,
-                                  oauth2: { ...authConfig.oauth2, authUrl: e.target.value }
-                                })}
-                                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
-                                placeholder="https://auth.example.com"
-                              />
-                            </div>
+
                             <div>
                               <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Token URL</label>
                               <input
@@ -571,6 +663,20 @@ const OnboardingPortal = () => {
                                 className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
                                 placeholder="https://token.example.com"
                               />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Client Authentication</label>
+                              <select
+                                value={authConfig.oauth2.clientAuthentication}
+                                onChange={(e) => setAuthConfig({
+                                  ...authConfig,
+                                  oauth2: { ...authConfig.oauth2, clientAuthentication: e.target.value }
+                                })}
+                                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                              >
+                                <option value="header">Send as Basic Auth Header</option>
+                                <option value="body">Send in Request Body</option>
+                              </select>
                             </div>
                           </div>
                         )}
@@ -628,13 +734,16 @@ const OnboardingPortal = () => {
               )}
 
               {/* Action Button */}
-              <button
-                onClick={handleTrainAgent}
-                disabled={isTraining || (knowledgeMode === 'url' && !apiUrl) || (knowledgeMode === 'file' && !uploadedFile)}
-                className="w-full py-3.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md"
-              >
-                {isTraining ? 'Setting up agent...' : 'Train Agent & Continue'}
-              </button>
+              {/* Action Button - Only show if org doesn't exist (new setup) */}
+              {!orgExists && (
+                <button
+                  onClick={handleTrainAgent}
+                  disabled={isTraining || (knowledgeMode === 'url' && !apiUrl) || (knowledgeMode === 'file' && !uploadedFile)}
+                  className="w-full py-3.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md"
+                >
+                  {isTraining ? 'Setting up agent...' : 'Train Agent & Continue'}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -754,18 +863,21 @@ const OnboardingPortal = () => {
               </div>
 
               {/* Complete Setup */}
-              <div className="p-6 bg-gray-50 border-t border-gray-200">
-                <button
-                  onClick={() => {
-                    setCompletedSteps([...completedSteps, 2]);
-                    alert('🎉 Onboarding Complete! Your AI agent is ready to deploy.');
-                  }}
-                  className="w-full py-3.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-2"
-                >
-                  <Check className="w-5 h-5" />
-                  Complete Setup & Deploy Agent
-                </button>
-              </div>
+               {/* Only show "Complete Setup" button for NEW orgs (not existing ones) */}
+              {!orgExists && (
+                <div className="p-6 bg-gray-50 border-t border-gray-200">
+                  <button
+                    onClick={() => {
+                      setCompletedSteps([...completedSteps, 2]);
+                      alert('🎉 Onboarding Complete! Your AI agent is ready to deploy.');
+                    }}
+                    className="w-full py-3.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-2"
+                  >
+                    <Check className="w-5 h-5" />
+                    Complete Setup & Deploy Agent
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

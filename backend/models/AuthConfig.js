@@ -6,6 +6,11 @@ const authConfigSchema = new mongoose.Schema({
     required: true,
     default: false
   },
+  zohoOrgId: {
+    type: String,
+    required: true,
+    index: true
+  },
   authType: {
     type: String,
     enum: ['oauth2', 'apiKey', 'bearer', 'basic', 'custom'],
