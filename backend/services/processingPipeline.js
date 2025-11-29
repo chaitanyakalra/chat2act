@@ -24,8 +24,19 @@ export class ProcessingPipeline {
 
     /**
      * Main processing function - processes uploaded API documentation
+     * @param {String} apiDocId - The API document ID
+     * @param {String} rawText - The raw API specification text
+     * @param {String} mimeType - The MIME type of the specification
+     * @param {String} zohoOrgId - The Zoho organization ID for namespace isolation
+     * @param {String} organizationName - Optional organization name
      */
-    async process(apiDocId, rawText, mimeType) {
+    async process(apiDocId, rawText, mimeType, zohoOrgId, organizationName = null) {
+        if (!zohoOrgId) {
+            throw new Error('zohoOrgId is required for multi-tenancy support');
+        }
+
+        // Use zohoOrgId as the namespace for Pinecone isolation
+        const namespace = zohoOrgId;
         try {
             log(`Starting Phase 1 processing for doc ${apiDocId}`);
 
@@ -36,8 +47,8 @@ export class ProcessingPipeline {
 
             // Step 2: Create structured API index
             log('Step 2: Creating structured API index...');
-            const apiIndex = await this.createApiIndex(apiDocId, parsed);
-            log(`Created API index: ${apiIndex._id}`);
+            const apiIndex = await this.createApiIndex(apiDocId, parsed, zohoOrgId, namespace, organizationName);
+            log(`Created API index: ${apiIndex._id} with namespace: ${namespace}`);
 
             // Step 3: Generate business tags using LLM
             log('Step 3: Generating business tags...');
@@ -62,8 +73,8 @@ export class ProcessingPipeline {
             log('Step 5: Initializing Pinecone...');
             await this.vectorDbService.initializeIndex();
             log('Step 6: Creating vector DB chunks...');
-            const chunks = await this.vectorDbService.createChunks(updatedApiIndex, updatedIntentMapping);
-            log(`Created ${chunks.length} vector chunks`);
+            const chunks = await this.vectorDbService.createChunks(updatedApiIndex, updatedIntentMapping, namespace);
+            log(`Created ${chunks.length} vector chunks in namespace: ${namespace}`);
 
             return {
                 success: true,
@@ -86,9 +97,11 @@ export class ProcessingPipeline {
     /**
      * Create API index in database
      */
-    async createApiIndex(apiDocId, parsed) {
+    async createApiIndex(apiDocId, parsed, zohoOrgId, namespace, organizationName) {
         const apiIndex = new ApiIndex({
             apiDocId,
+            zohoOrgId,
+            namespace,
             metadata: parsed.metadata,
             endpoints: parsed.endpoints,
             securitySchemes: parsed.securitySchemes,

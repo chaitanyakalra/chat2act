@@ -55,6 +55,11 @@ const endpointSchema = new mongoose.Schema({
 
 const apiIndexSchema = new mongoose.Schema({
     apiDocId: { type: mongoose.Schema.Types.ObjectId, ref: 'ApiDoc', required: true },
+
+    // Organization identification for multi-tenancy
+    zohoOrgId: { type: String, required: true, index: true },
+    namespace: { type: String, required: true, index: true },
+
     metadata: {
         format: String,
         version: String,
@@ -76,5 +81,6 @@ apiIndexSchema.index({ 'endpoints.tags': 1 });
 apiIndexSchema.index({ 'endpoints.businessTags': 1 });
 
 export default mongoose.model("ApiIndex", apiIndexSchema);
+
 
 
