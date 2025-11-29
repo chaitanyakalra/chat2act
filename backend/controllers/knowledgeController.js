@@ -1,5 +1,20 @@
 import { ProcessingPipeline } from '../services/processingPipeline.js';
+import { ApiParserService } from '../services/apiParserService.js';
 import ApiIndex from '../models/ApiIndex.js';
+import crypto from 'crypto';
+
+// Simple in-memory cache for analysis results (TTL: 10 minutes)
+const analysisCache = new Map();
+
+// Clean up old cache entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of analysisCache.entries()) {
+    if (now > value.expiry) {
+      analysisCache.delete(key);
+    }
+  }
+}, 60000); // Check every minute
 
 /**
  * Ingest API documentation from URL or file
@@ -7,9 +22,9 @@ import ApiIndex from '../models/ApiIndex.js';
  */
 export const ingestKnowledge = async (req, res) => {
   try {
-    const { sourceType, sourceUrl, fileContent, fileName, baseUrlOverride, zohoOrgId, organizationName, authConfig } = req.body;
+    const { sourceType, sourceUrl, fileContent, fileName, baseUrlOverride, zohoOrgId, organizationName, authConfig, analysisId } = req.body;
     
-    if (!sourceType || (sourceType === 'url' && !sourceUrl) || (sourceType === 'file' && !fileContent)) {
+    if (!analysisId && (!sourceType || (sourceType === 'url' && !sourceUrl) || (sourceType === 'file' && !fileContent))) {
       return res.status(400).json({
         success: false,
         message: 'Missing required fields: sourceType and sourceUrl/fileContent'
@@ -34,7 +49,13 @@ export const ingestKnowledge = async (req, res) => {
     let rawText;
     let mimeType = 'application/json'; // Default
     
-    if (sourceType === 'url') {
+    // Check cache first if analysisId provided
+    if (analysisId && analysisCache.has(analysisId)) {
+      console.log(`⚡ Using cached analysis data for ID: ${analysisId}`);
+      const cached = analysisCache.get(analysisId);
+      rawText = cached.rawText;
+      mimeType = cached.mimeType;
+    } else if (sourceType === 'url') {
       // Fetch from URL
       // Fetch from URL with optional authentication
       const headers = {};
@@ -170,6 +191,136 @@ export const ingestKnowledge = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to ingest knowledge',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Analyze API documentation without ingesting
+ * POST /api/knowledge/analyze
+ */
+export const analyzeKnowledge = async (req, res) => {
+  try {
+    const { sourceType, sourceUrl, fileContent, fileName, authConfig } = req.body;
+    
+    if (!sourceType || (sourceType === 'url' && !sourceUrl) || (sourceType === 'file' && !fileContent)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: sourceType and sourceUrl/fileContent'
+      });
+    }
+    
+    console.log(`🔍 Analyzing knowledge from ${sourceType}: ${sourceUrl || fileName}`);
+    
+    // Prepare raw text based on source type
+    let rawText;
+    let mimeType = 'application/json'; // Default
+    
+    if (sourceType === 'url') {
+      // Fetch from URL with optional authentication
+      const headers = {};
+      
+      if (authConfig) {
+        if (authConfig.type === 'bearer' && authConfig.token) {
+          headers['Authorization'] = `Bearer ${authConfig.token}`;
+        } else if (authConfig.type === 'basic' && authConfig.username && authConfig.password) {
+          const credentials = Buffer.from(`${authConfig.username}:${authConfig.password}`).toString('base64');
+          headers['Authorization'] = `Basic ${credentials}`;
+        } else if (authConfig.type === 'apiKey' && authConfig.location === 'header' && authConfig.keyName && authConfig.keyValue) {
+          headers[authConfig.keyName] = authConfig.keyValue;
+        } else if (authConfig.type === 'custom' && authConfig.headerName && authConfig.headerValue) {
+          headers[authConfig.headerName] = authConfig.headerValue;
+        } else if (authConfig.type === 'oauth2' && authConfig.clientId && authConfig.clientSecret && authConfig.tokenUrl) {
+          try {
+            console.log(`🔑 Fetching OAuth2 token from ${authConfig.tokenUrl}`);
+            
+            const bodyParams = new URLSearchParams();
+            bodyParams.append('grant_type', 'client_credentials');
+            
+            const requestHeaders = {
+              'Content-Type': 'application/x-www-form-urlencoded'
+            };
+
+            // Check client authentication method (header vs body)
+            if (authConfig.clientAuthentication === 'body') {
+              bodyParams.append('client_id', authConfig.clientId);
+              bodyParams.append('client_secret', authConfig.clientSecret);
+            } else {
+              requestHeaders['Authorization'] = `Basic ${Buffer.from(`${authConfig.clientId}:${authConfig.clientSecret}`).toString('base64')}`;
+            }
+
+            const tokenResponse = await fetch(authConfig.tokenUrl, {
+              method: 'POST',
+              headers: requestHeaders,
+              body: bodyParams.toString()
+            });
+            
+            if (tokenResponse.ok) {
+              const tokenData = await tokenResponse.json();
+              if (tokenData.access_token) {
+                headers['Authorization'] = `Bearer ${tokenData.access_token}`;
+              }
+            } else {
+              console.error('❌ Failed to fetch OAuth2 token:', await tokenResponse.text());
+            }
+          } catch (error) {
+            console.error('❌ OAuth2 token fetch error:', error);
+          }
+        }
+      }
+      
+      const response = await fetch(sourceUrl, { headers });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch from URL: ${response.statusText}`);
+      }
+      rawText = await response.text();
+      
+      // Detect YAML vs JSON
+      const contentType = response.headers.get('content-type');
+      if (contentType?.includes('yaml') || sourceUrl.endsWith('.yaml') || sourceUrl.endsWith('.yml')) {
+        mimeType = 'application/x-yaml';
+      }
+    } else {
+      // Use file content
+      rawText = fileContent;
+      
+      // Detect YAML vs JSON from filename
+      if (fileName?.endsWith('.yaml') || fileName?.endsWith('.yml')) {
+        mimeType = 'application/x-yaml';
+      }
+    }
+    
+    // Parse the documentation
+    const parsed = await ApiParserService.parse(rawText, mimeType);
+    
+    // Cache the result
+    const analysisId = crypto.randomUUID();
+    analysisCache.set(analysisId, {
+      rawText,
+      mimeType,
+      parsed, // Store parsed result too if we want to use it later
+      expiry: Date.now() + 10 * 60 * 1000 // 10 minutes TTL
+    });
+    
+    return res.json({
+      success: true,
+      message: 'Analysis complete',
+      data: {
+        analysisId, // Return ID to frontend
+        metadata: parsed.metadata,
+        stats: {
+          endpoints: parsed.endpoints.length,
+          components: Object.keys(parsed.components || {}).length
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Knowledge analysis error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to analyze knowledge',
       error: error.message
     });
   }

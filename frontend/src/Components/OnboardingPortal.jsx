@@ -30,7 +30,6 @@ const OnboardingPortal = () => {
   // Step 1: Knowledge Base State
   const [knowledgeMode, setKnowledgeMode] = useState('url'); // 'url' or 'file'
   const [apiUrl, setApiUrl] = useState('');
-  const [baseUrlOverride, setBaseUrlOverride] = useState(''); // Optional base URL override
   const [uploadedFile, setUploadedFile] = useState(null);
   const [isTraining, setIsTraining] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
@@ -40,6 +39,14 @@ const OnboardingPortal = () => {
   const [orgExists, setOrgExists] = useState(false);
   const [orgData, setOrgData] = useState(null);
   const [isCheckingOrg, setIsCheckingOrg] = useState(false);
+  
+  // Analysis State
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showServerSelection, setShowServerSelection] = useState(false);
+  const [availableServers, setAvailableServers] = useState([]);
+  const [selectedServerUrl, setSelectedServerUrl] = useState('');
+  const [manualBaseUrl, setManualBaseUrl] = useState('');
+  const [analysisId, setAnalysisId] = useState(null); // Store analysis ID for optimization
   
   // Step 2: Access Control State
   const [authEnabled, setAuthEnabled] = useState(false);
@@ -72,6 +79,62 @@ const OnboardingPortal = () => {
     { id: 'custom', name: 'Custom Header', icon: Code2, description: 'Flexible' }
   ];
 
+  // Analyze API to get servers
+  const handleAnalyze = async () => {
+    setIsAnalyzing(true);
+    setShowServerSelection(false);
+    setAvailableServers([]);
+    setSelectedServerUrl('');
+    
+    try {
+      // Prepare payload (similar to ingest but for analysis)
+      let payload;
+      if (knowledgeMode === 'url') {
+        payload = {
+          sourceType: 'url',
+          sourceUrl: apiUrl,
+          authConfig: authEnabled ? {
+            type: selectedAuthType,
+            ...authConfig[selectedAuthType]
+          } : null
+        };
+      } else {
+        const fileContent = await uploadedFile.text();
+        payload = {
+          sourceType: 'file',
+          fileContent: fileContent,
+          fileName: uploadedFile.name
+          
+        };
+      }
+      
+      const response = await axios.post(`${API_BASE_URL}/api/knowledge/analyze`, payload);
+      
+      if (response.data.success) {
+        const servers = response.data.data.metadata.servers || [];
+        setAvailableServers(servers);
+        setAnalysisId(response.data.data.analysisId); // Store ID for later use
+        
+        if (servers.length > 0) {
+          // Default to first server
+          setSelectedServerUrl(servers[0].url);
+        } else {
+          // No servers found, prepare for manual entry
+          setManualBaseUrl('');
+        }
+        
+        setShowServerSelection(true);
+      }
+    } catch (error) {
+      console.error('Analysis failed:', error);
+      // Fallback to manual entry if analysis fails
+      setShowServerSelection(true);
+      setAvailableServers([]);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   // Real API: Train Agent and Save Auth Config
   const handleTrainAgent = async () => {
     setIsTraining(true);
@@ -102,8 +165,9 @@ const OnboardingPortal = () => {
         payload = {
           sourceType: 'url',
           sourceUrl: apiUrl,
-          baseUrlOverride: baseUrlOverride || null,
-          zohoOrgId: zohoOrgId, // ADD THIS
+          baseUrlOverride: selectedServerUrl || manualBaseUrl || null,
+          zohoOrgId: zohoOrgId,
+          analysisId: analysisId, // Pass ID for optimization
           authConfig: authEnabled ? {
             type: selectedAuthType,
             ...authConfig[selectedAuthType]
@@ -116,8 +180,9 @@ const OnboardingPortal = () => {
           sourceType: 'file',
           fileContent: fileContent,
           fileName: uploadedFile.name,
-          baseUrlOverride: baseUrlOverride || null,
-          zohoOrgId: zohoOrgId // ADD THIS
+          baseUrlOverride: selectedServerUrl || manualBaseUrl || null,
+          zohoOrgId: zohoOrgId,
+          analysisId: analysisId // Pass ID for optimization
         };
       }
       
@@ -435,7 +500,7 @@ const OnboardingPortal = () => {
                 </div>
 
                 
-                <div className="mb-6">
+                {/* <div className="mb-6">
                   <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
                     Base URL Override (Optional)
                   </label>
@@ -452,7 +517,7 @@ const OnboardingPortal = () => {
                   <p className="mt-2 text-xs text-slate-500">
                     💡 Override the base URL from the OpenAPI spec (useful for staging/local testing)
                   </p>
-                </div>
+                </div> */}
                 </>
               )}
 
@@ -735,14 +800,81 @@ const OnboardingPortal = () => {
 
               {/* Action Button */}
               {/* Action Button - Only show if org doesn't exist (new setup) */}
+              {/* Action Button - Only show if org doesn't exist (new setup) */}
               {!orgExists && (
-                <button
-                  onClick={handleTrainAgent}
-                  disabled={isTraining || (knowledgeMode === 'url' && !apiUrl) || (knowledgeMode === 'file' && !uploadedFile)}
-                  className="w-full py-3.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md"
-                >
-                  {isTraining ? 'Setting up agent...' : 'Train Agent & Continue'}
-                </button>
+                <div className="space-y-4">
+                  {/* Server Selection UI */}
+                  {showServerSelection && (
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg animate-in fade-in slide-in-from-top-2">
+                      <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-indigo-600" />
+                        Select Server Environment
+                      </h3>
+                      
+                      {availableServers.length > 0 ? (
+                        <div className="space-y-3">
+                          <label className="block text-xs font-medium text-slate-500">Available Servers</label>
+                          <select
+                            value={selectedServerUrl}
+                            onChange={(e) => setSelectedServerUrl(e.target.value)}
+                            className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                          >
+                            {availableServers.map((server, idx) => (
+                              <option key={idx} value={server.url}>
+                                {server.url} {server.description ? `- ${server.description}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-slate-500">
+                            This URL will be used as the base for all API requests.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="flex items-start gap-2 p-3 bg-amber-50 text-amber-700 rounded-md text-sm mb-3">
+                            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            <p>No servers found in the specification. Please enter the Base URL manually.</p>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-500 mb-1">Base URL</label>
+                            <input
+                              type="url"
+                              value={manualBaseUrl}
+                              onChange={(e) => setManualBaseUrl(e.target.value)}
+                              placeholder="https://api.example.com"
+                              className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {!showServerSelection ? (
+                    <button
+                      onClick={handleAnalyze}
+                      disabled={isAnalyzing || (knowledgeMode === 'url' && !apiUrl) || (knowledgeMode === 'file' && !uploadedFile)}
+                      className="w-full py-3.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md"
+                    >
+                      {isAnalyzing ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Analyzing API...
+                        </span>
+                      ) : (
+                        'Analyze & Configure'
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleTrainAgent}
+                      disabled={isTraining || (availableServers.length === 0 && !manualBaseUrl)}
+                      className="w-full py-3.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md"
+                    >
+                      {isTraining ? 'Setting up agent...' : 'Confirm & Train Agent'}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
