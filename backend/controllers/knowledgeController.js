@@ -1,7 +1,5 @@
-import KnowledgeBase from '../models/KnowledgeBase.js';
-import LearnedSkill from '../models/LearnedSkill.js';
-import { parseAndExtract, endpointToText } from '../utils/openApiParser.js';
-import { generateEmbeddingAuto, storeVectorAuto } from '../services/vectorService.js';
+import { ProcessingPipeline } from '../services/processingPipeline.js';
+import ApiIndex from '../models/ApiIndex.js';
 
 /**
  * Ingest API documentation from URL or file
@@ -9,7 +7,7 @@ import { generateEmbeddingAuto, storeVectorAuto } from '../services/vectorServic
  */
 export const ingestKnowledge = async (req, res) => {
   try {
-    const { sourceType, sourceUrl, fileContent, fileName } = req.body;
+    const { sourceType, sourceUrl, fileContent, fileName, baseUrlOverride } = req.body;
     
     if (!sourceType || (sourceType === 'url' && !sourceUrl) || (sourceType === 'file' && !fileContent)) {
       return res.status(400).json({
@@ -19,88 +17,86 @@ export const ingestKnowledge = async (req, res) => {
     }
     
     console.log(`📥 Ingesting knowledge from ${sourceType}: ${sourceUrl || fileName}`);
-    
-    // Step 1: Parse OpenAPI specification
-    const source = sourceType === 'url' ? sourceUrl : fileContent;
-    const { spec, endpoints, validation } = await parseAndExtract(source, sourceType);
-    
-    if (!validation.valid) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid OpenAPI specification',
-        errors: validation.errors
-      });
+    if (baseUrlOverride) {
+      console.log(`🌐 Base URL override provided: ${baseUrlOverride}`);
     }
     
-    // Step 2: Create KnowledgeBase document
-    const knowledgeBase = await KnowledgeBase.create({
-      sourceUrl: sourceUrl || null,
-      sourceType,
-      fileName: fileName || null,
-      rawContent: JSON.stringify(spec),
-      parsedEndpoints: endpoints,
-      status: 'processing'
-    });
+    // Prepare raw text based on source type
+    let rawText;
+    let mimeType = 'application/json'; // Default
     
-    console.log(`✅ Created KnowledgeBase document: ${knowledgeBase._id}`);
-    
-    // Step 3: Generate embeddings and store vectors (dual-mode)
-    const namespace = `kb_${knowledgeBase._id}`;
-    const learnedSkills = [];
-    
-    for (const endpoint of endpoints) {
-      try {
-        // Create searchable text representation
-        const endpointText = endpointToText(endpoint);
-        
-        // Generate embedding
-        const embedding = await generateEmbeddingAuto(endpointText);
-        
-        // Store vector (returns vector ID)
-        const vectorId = await storeVectorAuto(embedding, {
-          method: endpoint.method,
-          endpoint: endpoint.endpoint,
-          description: endpoint.description,
-          knowledgeBaseId: knowledgeBase._id.toString()
-        }, namespace);
-        
-        // Create LearnedSkill document
-        const skill = await LearnedSkill.create({
-          method: endpoint.method,
-          endpoint: endpoint.endpoint,
-          description: endpoint.description,
-          parameters: endpoint.parameters,
-          knowledgeBaseId: knowledgeBase._id,
-          vectorId: vectorId
-        });
-        
-        learnedSkills.push(skill);
-      } catch (error) {
-        console.error(`❌ Error processing endpoint ${endpoint.method} ${endpoint.endpoint}:`, error.message);
-        // Continue with other endpoints
+    if (sourceType === 'url') {
+      // Fetch from URL
+      const response = await fetch(sourceUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch from URL: ${response.statusText}`);
+      }
+      rawText = await response.text();
+      
+      // Detect YAML vs JSON
+      const contentType = response.headers.get('content-type');
+      if (contentType?.includes('yaml') || sourceUrl.endsWith('.yaml') || sourceUrl.endsWith('.yml')) {
+        mimeType = 'application/x-yaml';
+      }
+    } else {
+      // Use file content
+      rawText = fileContent;
+      
+      // Detect YAML vs JSON from filename
+      if (fileName?.endsWith('.yaml') || fileName?.endsWith('.yml')) {
+        mimeType = 'application/x-yaml';
       }
     }
     
-    // Step 4: Update KnowledgeBase status
-    knowledgeBase.status = 'completed';
-    knowledgeBase.pineconeNamespace = namespace;
-    await knowledgeBase.save();
+    // Create a temporary API doc ID (we'll use the ApiIndex ID later)
+    const tempDocId = `temp_${Date.now()}`;
     
-    console.log(`✅ Knowledge ingestion complete. Learned ${learnedSkills.length} skills.`);
+    // Use ProcessingPipeline for advanced processing
+    const pipeline = new ProcessingPipeline();
+    const result = await pipeline.process(tempDocId, rawText, mimeType, baseUrlOverride);
+    
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: 'Processing failed',
+        error: result.error
+      });
+    }
+    
+    // Get the created ApiIndex to extract endpoints for frontend
+    const apiIndex = await ApiIndex.findById(result.apiIndexId);
+    
+    // Update ApiIndex with source information
+    apiIndex.sourceUrl = sourceUrl || null;
+    apiIndex.sourceType = sourceType;
+    apiIndex.fileName = fileName || null;
+    await apiIndex.save();
+    
+    console.log(`✅ Knowledge ingestion complete via ProcessingPipeline`);
+    console.log(`   - Endpoints: ${result.stats.endpoints}`);
+    console.log(`   - Intents: ${result.stats.intents}`);
+    console.log(`   - Sub-intents: ${result.stats.subIntents}`);
+    console.log(`   - Vector chunks: ${result.stats.vectorChunks}`);
+    
+    // Format skills for frontend (simplified view)
+    const skills = apiIndex.endpoints.map(ep => ({
+      method: ep.method,
+      endpoint: ep.path,
+      description: ep.summary || ep.description || '',
+      parameters: ep.parameters || []
+    }));
     
     return res.json({
       success: true,
-      message: 'Knowledge ingested successfully',
+      message: 'Knowledge ingested successfully with advanced processing',
       data: {
-        knowledgeBaseId: knowledgeBase._id,
-        totalEndpoints: endpoints.length,
-        learnedSkills: learnedSkills.length,
-        namespace: namespace,
-        skills: learnedSkills.map(s => ({
-          method: s.method,
-          endpoint: s.endpoint,
-          description: s.description
-        }))
+        knowledgeBaseId: result.apiIndexId,
+        totalEndpoints: result.stats.endpoints,
+        learnedSkills: result.stats.endpoints,
+        vectorChunks: result.stats.vectorChunks,
+        intents: result.stats.intents,
+        subIntents: result.stats.subIntents,
+        skills: skills
       }
     });
     
@@ -122,33 +118,58 @@ export const getLearnedSkills = async (req, res) => {
   try {
     const { knowledgeBaseId } = req.query;
     
-    // Build query
-    const query = knowledgeBaseId ? { knowledgeBaseId } : {};
-    
-    // Fetch skills
-    const skills = await LearnedSkill.find(query)
-      .populate('knowledgeBaseId', 'sourceUrl sourceType createdAt')
-      .sort({ createdAt: -1 });
-    
-    console.log(`📋 Retrieved ${skills.length} learned skills`);
-    
-    return res.json({
-      success: true,
-      count: skills.length,
-      data: skills.map(skill => ({
-        id: skill._id,
-        method: skill.method,
-        endpoint: skill.endpoint,
-        description: skill.description,
-        parameters: skill.parameters,
-        source: skill.knowledgeBaseId ? {
-          id: skill.knowledgeBaseId._id,
-          type: skill.knowledgeBaseId.sourceType,
-          url: skill.knowledgeBaseId.sourceUrl
-        } : null,
-        createdAt: skill.createdAt
-      }))
-    });
+    if (knowledgeBaseId) {
+      // Get specific API index
+      const apiIndex = await ApiIndex.findById(knowledgeBaseId);
+      
+      if (!apiIndex) {
+        return res.status(404).json({
+          success: false,
+          message: 'Knowledge base not found'
+        });
+      }
+      
+      const skills = apiIndex.endpoints.map(ep => ({
+        method: ep.method,
+        endpoint: ep.path,
+        description: ep.summary || ep.description || '',
+        parameters: ep.parameters || [],
+        tags: ep.businessTags || ep.tags || []
+      }));
+      
+      return res.json({
+        success: true,
+        count: skills.length,
+        data: skills
+      });
+    } else {
+      // Get all API indexes
+      const apiIndexes = await ApiIndex.find().sort({ createdAt: -1 });
+      
+      const allSkills = [];
+      apiIndexes.forEach(apiIndex => {
+        apiIndex.endpoints.forEach(ep => {
+          allSkills.push({
+            method: ep.method,
+            endpoint: ep.path,
+            description: ep.summary || ep.description || '',
+            parameters: ep.parameters || [],
+            tags: ep.businessTags || ep.tags || [],
+            source: {
+              id: apiIndex._id,
+              type: apiIndex.sourceType,
+              url: apiIndex.sourceUrl
+            }
+          });
+        });
+      });
+      
+      return res.json({
+        success: true,
+        count: allSkills.length,
+        data: allSkills
+      });
+    }
     
   } catch (error) {
     console.error('❌ Error fetching learned skills:', error);

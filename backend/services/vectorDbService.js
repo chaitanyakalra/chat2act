@@ -5,25 +5,42 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Pinecone } from '@pinecone-database/pinecone';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const USE_MOCK_MODE = process.env.USE_MOCK_MODE === 'true';
 
 export class VectorDbService {
     constructor() {
-        this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        this.useMockMode = USE_MOCK_MODE;
         this.embeddingModel = 'text-embedding-004'; // Gemini embedding model
         this.embeddingDimensions = 768; // Gemini embedding dimensions
 
-        // Initialize Pinecone
-        this.pinecone = new Pinecone({
-            apiKey: process.env.PINECONE_API_KEY
-        });
-        this.indexName = process.env.PINECONE_INDEX_NAME || 'chat2act-vectors';
-        this.index = null;
+        if (!this.useMockMode) {
+            // Initialize Gemini
+            this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+            
+            // Initialize Pinecone
+            this.pinecone = new Pinecone({
+                apiKey: process.env.PINECONE_API_KEY
+            });
+            this.indexName = process.env.PINECONE_INDEX_NAME || 'chat2act-vectors';
+            this.index = null;
+        } else {
+            console.log('🔄 VectorDbService initialized in MOCK mode');
+        }
     }
 
     /**
      * Initialize Pinecone index (call before using)
      */
     async initializeIndex() {
+        if (this.useMockMode) {
+            console.log('🔄 [MOCK] Skipping Pinecone initialization');
+            return null;
+        }
+
         try {
             if (this.index) {
                 return this.index; // Already initialized
@@ -280,8 +297,8 @@ export class VectorDbService {
             }
         }
 
-        // 5. Batch upsert vectors to Pinecone
-        if (vectorsToUpsert.length > 0) {
+        // 5. Batch upsert vectors to Pinecone (skip in mock mode)
+        if (vectorsToUpsert.length > 0 && !this.useMockMode) {
             try {
                 // Pinecone supports up to 100 vectors per upsert
                 const batchSize = 100;
@@ -289,11 +306,13 @@ export class VectorDbService {
                     const batch = vectorsToUpsert.slice(i, i + batchSize);
                     await this.index.upsert(batch);
                 }
-                console.log(`Upserted ${vectorsToUpsert.length} vectors to Pinecone`);
+                console.log(`✅ Upserted ${vectorsToUpsert.length} vectors to Pinecone`);
             } catch (error) {
                 console.error('Error upserting vectors to Pinecone:', error);
                 throw error;
             }
+        } else if (this.useMockMode) {
+            console.log(`🔄 [MOCK] Skipped Pinecone upsert for ${vectorsToUpsert.length} vectors`);
         }
 
         return savedChunks;
@@ -303,6 +322,15 @@ export class VectorDbService {
      * Generate embedding for text
      */
     async generateEmbedding(text) {
+        // Mock mode: return random embedding
+        if (this.useMockMode) {
+            console.log(`🔄 [MOCK] Generating random embedding for: "${text.substring(0, 50)}..."`);
+            await new Promise(resolve => setTimeout(resolve, 100)); // Simulate delay
+            const mockEmbedding = Array.from({ length: this.embeddingDimensions }, () => Math.random() - 0.5);
+            console.log(`✅ [MOCK] Generated ${mockEmbedding.length}-dimensional vector`);
+            return mockEmbedding;
+        }
+
         try {
             // Gemini embedding API - using REST API directly
             const apiKey = process.env.GEMINI_API_KEY;
@@ -413,6 +441,17 @@ export class VectorDbService {
      * Search chunks by similarity using Pinecone
      */
     async searchChunks(query, apiIndexId, limit = 10) {
+        // Mock mode: return sample results from MongoDB
+        if (this.useMockMode) {
+            console.log(`🔄 [MOCK] Searching chunks for query: "${query}"`);
+            const VectorChunk = (await import('../models/VectorChunk.js')).default;
+            const chunks = await VectorChunk.find({ apiIndexId }).limit(limit);
+            return chunks.map((chunk, idx) => ({
+                ...chunk.toObject(),
+                score: 0.9 - (idx * 0.05) // Mock decreasing scores
+            }));
+        }
+
         try {
             // Initialize index if needed
             if (!this.index) {

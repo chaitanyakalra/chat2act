@@ -25,7 +25,7 @@ export class ProcessingPipeline {
     /**
      * Main processing function - processes uploaded API documentation
      */
-    async process(apiDocId, rawText, mimeType) {
+    async process(apiDocId, rawText, mimeType, baseUrlOverride = null) {
         try {
             log(`Starting Phase 1 processing for doc ${apiDocId}`);
 
@@ -33,6 +33,12 @@ export class ProcessingPipeline {
             log('Step 1: Parsing API documentation...');
             const parsed = await ApiParserService.parse(rawText, mimeType);
             log(`Parsed ${parsed.endpoints.length} endpoints`);
+
+            // Apply base URL override if provided
+            if (baseUrlOverride) {
+                log(`Applying base URL override: ${baseUrlOverride}`);
+                parsed.metadata.baseUrl = baseUrlOverride;
+            }
 
             // Step 2: Create structured API index
             log('Step 2: Creating structured API index...');
@@ -88,7 +94,7 @@ export class ProcessingPipeline {
      */
     async createApiIndex(apiDocId, parsed) {
         const apiIndex = new ApiIndex({
-            apiDocId,
+            apiDocId: null, // Not using ApiDoc model in onboarding flow
             metadata: parsed.metadata,
             endpoints: parsed.endpoints,
             securitySchemes: parsed.securitySchemes,

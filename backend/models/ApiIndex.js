@@ -54,7 +54,10 @@ const endpointSchema = new mongoose.Schema({
 }, { _id: false });
 
 const apiIndexSchema = new mongoose.Schema({
-    apiDocId: { type: mongoose.Schema.Types.ObjectId, ref: 'ApiDoc', required: true },
+    apiDocId: { type: mongoose.Schema.Types.ObjectId, ref: 'ApiDoc', required: false }, // Optional for onboarding flow
+    sourceUrl: { type: String }, // For URL-based ingestion
+    sourceType: { type: String, enum: ['url', 'file'] }, // Source type
+    fileName: { type: String }, // For file-based ingestion
     metadata: {
         format: String,
         version: String,

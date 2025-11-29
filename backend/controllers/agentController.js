@@ -1,4 +1,4 @@
-import LearnedSkill from '../models/LearnedSkill.js';
+import ApiIndex from '../models/ApiIndex.js';
 import { matchEndpointAuto } from '../utils/agentMatcher.js';
 import { getDecryptedAuthConfig } from './authController.js';
 import { generateResponse } from '../services/llmService.js';
@@ -20,10 +20,42 @@ export const executeAgent = async (req, res) => {
     }
     
     console.log(`🤖 Agent executing query: "${userQuery}"`);
+    console.log(`📋 Knowledge Base ID: ${knowledgeBaseId || 'NOT PROVIDED - will use all endpoints'}`);
     
-    // Step 1: Get available endpoints
-    const query = knowledgeBaseId ? { knowledgeBaseId } : {};
-    const availableEndpoints = await LearnedSkill.find(query).lean();
+    // Step 1: Get available endpoints from ApiIndex
+    let availableEndpoints = [];
+    let baseUrl = null; // Store base URL for API calls
+    
+    if (knowledgeBaseId) {
+      // Get specific API index
+      const apiIndex = await ApiIndex.findById(knowledgeBaseId);
+      if (apiIndex) {
+        // Extract base URL from metadata
+        console.log("apiIndex" , apiIndex.metadata);
+        baseUrl = apiIndex.metadata?.baseUrl || null;
+        console.log("metadata : ", baseUrl);
+        // Transform ApiIndex endpoints to match expected format
+        availableEndpoints = apiIndex.endpoints.map(ep => ({
+          method: ep.method,
+          endpoint: ep.path,
+          description: ep.summary || ep.description || '',
+          parameters: ep.parameters || []
+        }));
+      }
+    } else {
+      // Get all API indexes
+      const apiIndexes = await ApiIndex.find();
+      apiIndexes.forEach(apiIndex => {
+        apiIndex.endpoints.forEach(ep => {
+          availableEndpoints.push({
+            method: ep.method,
+            endpoint: ep.path,
+            description: ep.summary || ep.description || '',
+            parameters: ep.parameters || []
+          });
+        });
+      });
+    }
     
     if (availableEndpoints.length === 0) {
       return res.status(404).json({
@@ -85,10 +117,12 @@ export const executeAgent = async (req, res) => {
       console.log(`🔄 [PROD] Making real API call...`);
       
       try {
+        console.log("agentController: ", match);
         const result = await executeRealApiCall(
           match.endpoint,
           match.parameters,
-          authConfig
+          authConfig,
+          baseUrl  // Pass base URL
         );
         
         apiResponse = result.data;
@@ -198,15 +232,29 @@ function generateMockResponse(endpoint, parameters) {
 /**
  * Execute real API call with authentication (PRODUCTION)
  */
-async function executeRealApiCall(endpoint, parameters, authConfig) {
-  // Build URL
-  let url = endpoint.endpoint;
-  
+async function executeRealApiCall(endpoint, parameters, authConfig, baseUrl) {
+  // Build full URL with base URL
+  let path = endpoint.endpoint;
+  console.log("baseurl: ", baseUrl);
   // Replace path parameters
   if (parameters) {
     Object.entries(parameters).forEach(([key, value]) => {
-      url = url.replace(`{${key}}`, value);
+      path = path.replace(`{${key}}`, value);
     });
+  }
+  
+  // Construct full URL
+  let url;
+  if (baseUrl) {
+    // Remove trailing slash from baseUrl and leading slash from path
+    const cleanBaseUrl = baseUrl.replace(/\/$/, '');
+    const cleanPath = path.replace(/^\//, '');
+    url = `${cleanBaseUrl}/${cleanPath}`;
+    console.log(`🌐 Base URL: ${baseUrl}`);
+    console.log(`🌐 Full URL: ${url}`);
+  } else {
+    url = path;
+    console.log(`⚠️  No base URL provided, using path only: ${url}`);
   }
   
   // Prepare request config

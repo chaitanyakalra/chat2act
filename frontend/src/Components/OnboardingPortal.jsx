@@ -29,6 +29,7 @@ const OnboardingPortal = () => {
   // Step 1: Knowledge Base State
   const [knowledgeMode, setKnowledgeMode] = useState('url'); // 'url' or 'file'
   const [apiUrl, setApiUrl] = useState('');
+  const [baseUrlOverride, setBaseUrlOverride] = useState(''); // Optional base URL override
   const [uploadedFile, setUploadedFile] = useState(null);
   const [isTraining, setIsTraining] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
@@ -47,6 +48,7 @@ const OnboardingPortal = () => {
   
   // Step 3: Verify State
   const [learnedSkills, setLearnedSkills] = useState([]);
+  const [knowledgeBaseId, setKnowledgeBaseId] = useState(null); // Track current knowledge base
   const [chatMessages, setChatMessages] = useState([]);
   const [userInput, setUserInput] = useState('');
   const [isBotTyping, setIsBotTyping] = useState(false);
@@ -92,7 +94,8 @@ const OnboardingPortal = () => {
       if (knowledgeMode === 'url') {
         payload = {
           sourceType: 'url',
-          sourceUrl: apiUrl
+          sourceUrl: apiUrl,
+          baseUrlOverride: baseUrlOverride || null
         };
       } else {
         // Read file content
@@ -100,7 +103,8 @@ const OnboardingPortal = () => {
         payload = {
           sourceType: 'file',
           fileContent: fileContent,
-          fileName: uploadedFile.name
+          fileName: uploadedFile.name,
+          baseUrlOverride: baseUrlOverride || null
         };
       }
       
@@ -109,16 +113,18 @@ const OnboardingPortal = () => {
       
       // Call real backend API
       const response = await axios.post(`${API_BASE_URL}/api/knowledge/ingest`, payload);
-      
+      console.log("first response formbackend: ", response);
       setTrainingProgress(80);
       setTrainingStage('Generating Vector Embeddings...');
       
       await new Promise(resolve => setTimeout(resolve, 800));
       setTrainingProgress(100);
       
-      // Extract learned skills from response
+      // Extract learned skills and knowledge base ID from response
       if (response.data.success && response.data.data.skills) {
+        console.log("skills: ", response.data.data);
         setLearnedSkills(response.data.data.skills);
+        setKnowledgeBaseId(response.data.data.knowledgeBaseId); // Store for agent queries
       }
       
       console.log('✅ Knowledge ingestion successful:', response.data);
@@ -162,7 +168,8 @@ const OnboardingPortal = () => {
     try {
       // Call real backend API
       const response = await axios.post(`${API_BASE_URL}/api/agent/execute`, {
-        userQuery: currentQuery
+        userQuery: currentQuery,
+        knowledgeBaseId: knowledgeBaseId // Pass the knowledge base ID
       });
       
       if (response.data.success) {
@@ -306,6 +313,7 @@ const OnboardingPortal = () => {
 
               {/* URL Input */}
               {knowledgeMode === 'url' && (
+                <>
                 <div className="mb-6">
                   <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
                     OpenAPI Specification URL
@@ -321,34 +329,59 @@ const OnboardingPortal = () => {
                     />
                   </div>
                 </div>
+
+                
+                <div className="mb-6">
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                    Base URL Override (Optional)
+                  </label>
+                  <div className="relative">
+                    <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                    <input
+                      type="url"
+                      value={baseUrlOverride}
+                      onChange={(e) => setBaseUrlOverride(e.target.value)}
+                      placeholder="https://staging.myapi.com (leave empty to use spec default)"
+                      className="w-full pl-12 pr-4 py-3.5 bg-white border border-gray-200 rounded-lg text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    💡 Override the base URL from the OpenAPI spec (useful for staging/local testing)
+                  </p>
+                </div>
+                </>
               )}
 
               {/* File Upload */}
-              {knowledgeMode === 'file' && (
+               {knowledgeMode === 'file' && (
                 <div className="mb-6">
                   <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
                     Upload OpenAPI File
                   </label>
-                  <div className="border-2 border-dashed border-gray-200 rounded-lg p-8 text-center hover:border-indigo-300 transition-all cursor-pointer">
+                  <input
+                    type="file"
+                    accept=".json,.yaml,.yml"
+                    onChange={(e) => setUploadedFile(e.target.files[0])}
+                    className="hidden"
+                    id="file-upload"
+                  />
+                  <label 
+                    htmlFor="file-upload" 
+                    className="block border-2 border-dashed border-gray-200 rounded-lg p-8 text-center hover:border-indigo-300 transition-all cursor-pointer"
+                  >
                     <Upload className="w-8 h-8 text-slate-400 mx-auto mb-3" />
-                    <input
-                      type="file"
-                      accept=".json,.yaml,.yml"
-                      onChange={(e) => setUploadedFile(e.target.files[0])}
-                      className="hidden"
-                      id="file-upload"
-                    />
-                    <label htmlFor="file-upload" className="cursor-pointer">
-                      {uploadedFile ? (
-                        <p className="text-sm font-medium text-slate-900">{uploadedFile.name}</p>
-                      ) : (
-                        <>
-                          <p className="text-sm font-medium text-slate-900 mb-1">Drop file or click to browse</p>
-                          <p className="text-xs text-slate-500">Supports JSON, YAML formats</p>
-                        </>
-                      )}
-                    </label>
-                  </div>
+                    {uploadedFile ? (
+                      <div>
+                        <p className="text-sm font-medium text-slate-900 mb-1">{uploadedFile.name}</p>
+                        <p className="text-xs text-slate-500">Click to change file</p>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-sm font-medium text-slate-900 mb-1">Drop file or click to browse</p>
+                        <p className="text-xs text-slate-500">Supports JSON, YAML formats</p>
+                      </>
+                    )}
+                  </label>
                 </div>
               )}
 
@@ -606,257 +639,9 @@ const OnboardingPortal = () => {
           </div>
         )}
 
+
         {/* Step 2: Verify Agent */}
         {currentStep === 2 && (
-          <div className="max-w-3xl mx-auto">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-8">
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-slate-900 mb-2">Authentication Strategy</h2>
-                <p className="text-slate-500">Configure how the agent authenticates with your API</p>
-              </div>
-
-              {/* Master Toggle */}
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg mb-6">
-                <div>
-                  <h3 className="font-semibold text-slate-900">Enable Authentication</h3>
-                  <p className="text-sm text-slate-500">Secure API calls with credentials</p>
-                </div>
-                <button
-                  onClick={() => setAuthEnabled(!authEnabled)}
-                  className={`relative w-14 h-7 rounded-full transition-all ${
-                    authEnabled ? 'bg-indigo-600' : 'bg-gray-300'
-                  }`}
-                >
-                  <div className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full transition-transform ${
-                    authEnabled ? 'translate-x-7' : 'translate-x-0'
-                  }`} />
-                </button>
-              </div>
-
-              {authEnabled && (
-                <>
-                  {/* Auth Type Grid */}
-                  <div className="grid grid-cols-3 gap-3 mb-6">
-                    {authTypes.map((type) => {
-                      const Icon = type.icon;
-                      return (
-                        <button
-                          key={type.id}
-                          onClick={() => setSelectedAuthType(type.id)}
-                          className={`p-4 rounded-lg border-2 transition-all text-left ${
-                            selectedAuthType === type.id
-                              ? 'bg-indigo-50 border-indigo-600'
-                              : 'bg-white border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          <Icon className={`w-5 h-5 mb-2 ${
-                            selectedAuthType === type.id ? 'text-indigo-600' : 'text-slate-400'
-                          }`} />
-                          <div className={`font-semibold text-sm mb-0.5 ${
-                            selectedAuthType === type.id ? 'text-indigo-900' : 'text-slate-900'
-                          }`}>
-                            {type.name}
-                          </div>
-                          <div className="text-xs text-slate-500">{type.description}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Configuration Form */}
-                  <div className="p-6 bg-gray-50/50 rounded-lg border border-gray-200">
-                    <h3 className="text-sm font-semibold text-slate-500 uppercase mb-4">Configuration</h3>
-                    
-                    {selectedAuthType === 'oauth2' && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Client ID</label>
-                          <input
-                            type="text"
-                            value={authConfig.oauth2.clientId}
-                            onChange={(e) => setAuthConfig({
-                              ...authConfig,
-                              oauth2: { ...authConfig.oauth2, clientId: e.target.value }
-                            })}
-                            className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
-                            placeholder="your-client-id"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Client Secret</label>
-                          <input
-                            type="password"
-                            value={authConfig.oauth2.clientSecret}
-                            onChange={(e) => setAuthConfig({
-                              ...authConfig,
-                              oauth2: { ...authConfig.oauth2, clientSecret: e.target.value }
-                            })}
-                            className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
-                            placeholder="••••••••"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Auth URL</label>
-                          <input
-                            type="url"
-                            value={authConfig.oauth2.authUrl}
-                            onChange={(e) => setAuthConfig({
-                              ...authConfig,
-                              oauth2: { ...authConfig.oauth2, authUrl: e.target.value }
-                            })}
-                            className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
-                            placeholder="https://auth.example.com"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Token URL</label>
-                          <input
-                            type="url"
-                            value={authConfig.oauth2.tokenUrl}
-                            onChange={(e) => setAuthConfig({
-                              ...authConfig,
-                              oauth2: { ...authConfig.oauth2, tokenUrl: e.target.value }
-                            })}
-                            className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
-                            placeholder="https://token.example.com"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {selectedAuthType === 'apiKey' && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Key Name</label>
-                          <input
-                            type="text"
-                            value={authConfig.apiKey.keyName}
-                            onChange={(e) => setAuthConfig({
-                              ...authConfig,
-                              apiKey: { ...authConfig.apiKey, keyName: e.target.value }
-                            })}
-                            className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
-                            placeholder="X-API-Key"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Key Value</label>
-                          <input
-                            type="password"
-                            value={authConfig.apiKey.keyValue}
-                            onChange={(e) => setAuthConfig({
-                              ...authConfig,
-                              apiKey: { ...authConfig.apiKey, keyValue: e.target.value }
-                            })}
-                            className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
-                            placeholder="••••••••"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {selectedAuthType === 'bearer' && (
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Bearer Token</label>
-                        <input
-                          type="password"
-                          value={authConfig.bearer.token}
-                          onChange={(e) => setAuthConfig({
-                            ...authConfig,
-                            bearer: { token: e.target.value }
-                          })}
-                          className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
-                          placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                        />
-                      </div>
-                    )}
-
-                    {selectedAuthType === 'basic' && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Username</label>
-                          <input
-                            type="text"
-                            value={authConfig.basic.username}
-                            onChange={(e) => setAuthConfig({
-                              ...authConfig,
-                              basic: { ...authConfig.basic, username: e.target.value }
-                            })}
-                            className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
-                            placeholder="admin"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Password</label>
-                          <input
-                            type="password"
-                            value={authConfig.basic.password}
-                            onChange={(e) => setAuthConfig({
-                              ...authConfig,
-                              basic: { ...authConfig.basic, password: e.target.value }
-                            })}
-                            className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
-                            placeholder="••••••••"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {selectedAuthType === 'custom' && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Header Name</label>
-                          <input
-                            type="text"
-                            value={authConfig.custom.headerName}
-                            onChange={(e) => setAuthConfig({
-                              ...authConfig,
-                              custom: { ...authConfig.custom, headerName: e.target.value }
-                            })}
-                            className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
-                            placeholder="X-Custom-Auth"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Header Value</label>
-                          <input
-                            type="password"
-                            value={authConfig.custom.headerValue}
-                            onChange={(e) => setAuthConfig({
-                              ...authConfig,
-                              custom: { ...authConfig.custom, headerValue: e.target.value }
-                            })}
-                            className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
-                            placeholder="••••••••"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex gap-3 mt-6">
-                <button
-                  onClick={() => setCurrentStep(1)}
-                  className="px-6 py-3 border border-gray-200 text-slate-700 font-semibold rounded-lg hover:bg-gray-50 transition-all"
-                >
-                  Back
-                </button>
-                <button
-                  onClick={handleSaveAuthConfig}
-                  className="flex-1 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all shadow-sm hover:shadow-md"
-                >
-                  Continue to Verification
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Verify Agent */}
-        {currentStep === 3 && (
           <div className="max-w-6xl mx-auto">
             <div className="bg-white rounded-xl border border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
               <div className="p-6 border-b border-gray-200">

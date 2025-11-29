@@ -179,7 +179,7 @@ Respond with a JSON object containing:
     } else if (LLM_PROVIDER === 'gemini') {
       // Gemini implementation
       const model = gemini.getGenerativeModel({ 
-        model: 'gemini-1.5-pro',
+        model: 'gemini-2.5-flash',
         generationConfig: {
           temperature: 0.3,
           responseMimeType: 'application/json'
@@ -253,7 +253,7 @@ export const generateResponse = async (userQuery, apiResponse, endpoint) => {
       
     } else if (LLM_PROVIDER === 'gemini') {
       const model = gemini.getGenerativeModel({ 
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.5-flash',
         generationConfig: {
           temperature: 0.7,
           maxOutputTokens: 200
@@ -278,15 +278,23 @@ export const generateResponse = async (userQuery, apiResponse, endpoint) => {
 export const analyzeQueryAuto = USE_MOCK_MODE ? analyzeQueryMock : analyzeQuery;
 
 console.log(`🚀 LLM Service initialized in ${USE_MOCK_MODE ? 'MOCK' : 'PRODUCTION'} mode`);
+
+// ============================================
+// ADVANCED LLM SERVICE (Business Tags & Intent Mapping)
+// ============================================
+
 /**
  * LLM Service for generating business tags and intent mappings
+ * This is a separate service for advanced API documentation processing
  */
-
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
 export class LLMService {
     constructor() {
-        this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        // Reuse the existing Gemini client if available, otherwise create new one
+        if (gemini) {
+            this.genAI = gemini;
+        } else {
+            this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        }
         this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
     }
 
