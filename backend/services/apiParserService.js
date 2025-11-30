@@ -93,7 +93,8 @@ export class ApiParserService {
         }
 
         const endpoints = [];
-        const baseUrl = spec.servers?.[0]?.url || '';
+        const servers = spec.servers || [];
+        const baseUrl = servers[0]?.url || '';
         const paths = spec.paths || {};
 
         for (const [path, pathItem] of Object.entries(paths)) {
@@ -125,6 +126,7 @@ export class ApiParserService {
             version: spec.openapi || spec.swagger,
             info: spec.info || {},
             baseUrl,
+            servers,
             endpoints,
             components: spec.components || {},
             securitySchemes: spec.components?.securitySchemes || {}
@@ -372,6 +374,7 @@ export class ApiParserService {
                 title: parsed.info?.title || 'API Documentation',
                 description: parsed.info?.description || '',
                 baseUrl: parsed.baseUrl,
+                servers: parsed.servers || [],
                 parsedAt: new Date().toISOString()
             },
             endpoints: parsed.endpoints.map((endpoint, index) => ({
