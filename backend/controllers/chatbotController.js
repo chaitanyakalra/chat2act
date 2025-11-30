@@ -72,14 +72,26 @@ class ChatbotController {
                     }
                 }
 
+                // 2.6 Check if permanent session already exists (for subsequent chats)
+                let existingParams = {};
+                if (visitorId && orgId) {
+                    existingParams = await redisSessionService.getSession(visitorId, orgId) || {};
+                    if (Object.keys(existingParams).length > 1) { // More than just orgId
+                        console.log(`♻️  Found existing session params for ${visitorId}`);
+                    }
+                }
+
                 // 3. Dynamic Parameter Extraction
-                // CLEANER APPROACH: Only extract custom_info and essential fields
+                // Priority: existing params > temp params > payload params
                 const sessionParams = {
-                    // Custom Parameters (Flattened for easy access)
-                    ...tempCustomParams,                 // From direct API call (priority)
-                    ...payload.visitor?.custom_info,     // From Zoho (if configured)
-                    ...payload.visitor?.info,            // Fallback
-                    ...payload.session?.variables,       // Zobot variables
+                    // Start with existing params (from previous chat)
+                    ...existingParams,
+                    // Override with temp params if available (from page load)
+                    ...tempCustomParams,
+                    // Override with any new params from Zoho
+                    ...payload.visitor?.custom_info,
+                    ...payload.visitor?.info,
+                    ...payload.session?.variables,
 
                     // System
                     orgId: orgId
