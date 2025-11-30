@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zoho SalesIQ - Session Params Test</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        code {
+            background: #f4f4f4;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🧪 Zoho SalesIQ Parameter Test (Direct API)</h1>
+        <p>This page demonstrates sending custom session parameters <strong>directly to your backend</strong>, bypassing
+            Zoho's webhook limitations.</p>
+
+        <h3>Parameters being sent:</h3>
+        <ul>
+            <li><code>user_id</code>: <strong>user_test_999</strong></li>
+            <li><code>role</code>: <strong>premium_user</strong></li>
+            <li><code>last_order</code>: <strong>ORD-555-XYZ</strong></li>
+            <li><code>region</code>: <strong>APAC</strong></li>
+        </ul>
+
+        <div id="status" class="status" style="display: none;"></div>
+
+        <p><strong>How it works:</strong></p>
+        <ol>
+            <li>Custom params are sent directly to your backend via <code>/chatbot/session</code></li>
+            <li>They are stored temporarily in Redis (5 min TTL)</li>
+            <li>When the Zoho trigger event arrives, params are merged with org_id and email</li>
+            <li>Final session data is stored permanently in Redis</li>
+        </ol>
+    </div>
+
+    <!-- ZOHO SALESIQ WIDGET CODE -->
+    <script id="zsiqscript"
+        src="https://salesiq.zohopublic.in/widget?wc=siq70340f6dc44c1da2c5fb7229fa02a59e336f199843da16513e3ba3ab43aa9ddf"
+        defer>
+        </script>
+
+    <!-- CUSTOM PARAMETER INJECTION - RUNS IMMEDIATELY -->
+    <script>
+        // IMPORTANT: Replace with your actual backend URL
+        const BACKEND_URL = 'https://eca3966f1cbb.ngrok-free.app';
+
+        // User data - in production, get this from your auth system
+        const userData = {
+            email: "test.user@example.com",
+            custom_params: {
+                user_id: "user_test_999",
+                role: "premium_user",
+                last_order: "ORD-555-XYZ",
+                subscription: "active",
+                region: "APAC"
+            }
+        };
+
+        // Send params IMMEDIATELY on page load
+        console.log("📤 Sending session params to backend...");
+        fetch(`${BACKEND_URL}/chatbot/session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(userData)
+        })
+            .then(response => response.json())
+            .then(data => {
+                console.log("🚀 Session params stored:", data);
+                document.getElementById('status').className = 'status success';
+                document.getElementById('status').style.display = 'block';
+                document.getElementById('status').textContent = '✅ Session parameters successfully sent to backend!';
+            })
+            .catch(error => {
+                console.error("❌ Failed to store session params:", error);
+                document.getElementById('status').className = 'status error';
+                document.getElementById('status').style.display = 'block';
+                document.getElementById('status').textContent = '❌ Failed to send parameters. Check console for details.';
+            });
+
+        // Initialize Zoho widget
+        window.$zoho = window.$zoho || {};
+        $zoho.salesiq = $zoho.salesiq || { ready: [] };
+
+        $zoho.salesiq.ready.push(function () {
+            console.log("✅ Zoho Widget Loaded!");
+            $zoho.salesiq.visitor.info({ "email": userData.email });
+        });
+    </script>
+</body>
+
+</html>
