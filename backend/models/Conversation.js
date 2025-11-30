@@ -178,13 +178,13 @@ conversationSchema.methods.consumePendingResult = function () {
 // Method to get knownIds (from Redis first, fallback to Mongo)
 conversationSchema.methods.getKnownIds = async function () {
     const conversationKey = `${this.orgId}:${this.visitorId}`;
-    
+
     // Try Redis first
     const cachedIds = await redisService.getKnownIds(conversationKey);
     if (cachedIds) {
         return cachedIds;
     }
-    
+
     // Fallback to Mongo
     if (this.knownIds && this.knownIds.size > 0) {
         const knownIdsObj = Object.fromEntries(this.knownIds);
@@ -192,24 +192,24 @@ conversationSchema.methods.getKnownIds = async function () {
         await redisService.setKnownIds(conversationKey, knownIdsObj);
         return knownIdsObj;
     }
-    
+
     return {};
 };
 
 // Method to set a single knownId (writes to both Redis and Mongo)
 conversationSchema.methods.setKnownId = async function (key, value) {
     const conversationKey = `${this.orgId}:${this.visitorId}`;
-    
+
     // Update Mongo
     if (!this.knownIds) {
         this.knownIds = new Map();
     }
     this.knownIds.set(key, value);
     await this.save();
-    
+
     // Update Redis
     await redisService.updateKnownId(conversationKey, key, value);
-    
+
     console.log(`💾 Saved ${key} to knownIds cache (Redis + Mongo)`);
 };
 
@@ -226,11 +226,11 @@ conversationSchema.methods.syncKnownIdsToRedis = async function () {
     if (!this.knownIds || this.knownIds.size === 0) {
         return;
     }
-    
+
     const conversationKey = `${this.orgId}:${this.visitorId}`;
     const knownIdsObj = Object.fromEntries(this.knownIds);
     await redisService.setKnownIds(conversationKey, knownIdsObj);
-    
+
     console.log(`🔄 Synced knownIds to Redis for ${conversationKey}`);
 };
 

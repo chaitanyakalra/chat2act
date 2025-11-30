@@ -20,23 +20,30 @@ export class ApiExecutorService {
         try {
             console.log(`📞 Executing API call for endpoint: ${endpointId}`);
 
-            // 1. Get endpoint specification
-            const endpoint = await this.getEndpointSpec(endpointId, apiIndexId);
+            // 1. Get endpoint specification and base URL from ApiIndex
+            const apiIndex = await ApiIndex.findById(apiIndexId);
+            if (!apiIndex) {
+                throw new Error('API Index not found');
+            }
+
+            const endpoint = apiIndex.endpoints.find(ep => ep.endpointId === endpointId);
             if (!endpoint) {
                 throw new Error(`Endpoint ${endpointId} not found`);
             }
 
-            // 2. Get OAuth token
-            const token = await this.getOAuthToken(orgId);
-
-            // 3. Get organization for API base URL
-            const org = await Organization.findOne({ orgId });
-            if (!org || !org.apiBaseUrl) {
-                throw new Error('Organization API base URL not configured');
+            // 2. Get base URL from ApiIndex metadata
+            const baseUrl = apiIndex.metadata?.baseUrl;
+            console.log(`Base URL: ${baseUrl}`);
+            if (!baseUrl) {
+                throw new Error('API base URL not configured in ApiIndex metadata');
             }
 
+
+            // 3. Get OAuth token
+            const token = await this.getOAuthToken(orgId);
+
             // 4. Build request
-            const request = this.buildRequest(endpoint, parameters, token, org.apiBaseUrl);
+            const request = this.buildRequest(endpoint, parameters, token, baseUrl);
 
             // 5. Execute request
             console.log(`🚀 Calling ${request.method} ${request.url}`);
@@ -102,11 +109,17 @@ export class ApiExecutorService {
      * Get valid OAuth token for organization
      */
     async getOAuthToken(orgId) {
-        const org = await Organization.findOne({ orgId });
+        // Debug log
+        console.log(`🔍 Looking up Organization with orgId: "${orgId}"`);
+
+        const org = await Organization.findOne({ orgId: orgId });
 
         if (!org) {
-            throw new Error('Organization not found');
+            console.error(`❌ Organization lookup failed for ID: ${orgId}`);
+            throw new Error(`Organization not found for orgId: ${orgId}`);
         }
+
+        console.log(`✅ Found organization: ${org._id}`);
 
         if (!org.oauthCredentials || !org.oauthCredentials.accessToken) {
             throw new Error('OAuth credentials not configured for this organization');

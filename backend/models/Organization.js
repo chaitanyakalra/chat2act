@@ -83,6 +83,30 @@ const organizationSchema = new mongoose.Schema({
         type: Map,
         of: String,
         default: {}
+    },
+
+    // SalesIQ REST API configuration
+    salesiqConfig: {
+        screenName: {
+            type: String,
+            required: false
+        },
+        clientId: {
+            type: String,
+            required: false
+        },
+        clientSecret: {
+            type: String,
+            required: false
+        },
+        redirectUrl: {
+            type: String,
+            required: false
+        },
+        scopes: {
+            type: [String],
+            default: []
+        }
     }
 }, {
     timestamps: true

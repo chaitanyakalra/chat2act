@@ -31,10 +31,11 @@ export class ParameterResolverService {
         try {
             console.log(`🔍 Attempting to auto-resolve userId for email: ${email}`);
 
-            // 1. Check cache first
-            if (conversation.resolvedParameters && conversation.resolvedParameters.get('userId')) {
-                console.log('✅ Found cached userId');
-                return conversation.resolvedParameters.get('userId');
+            // 1. Check knownIds cache first (Redis + Mongo)
+            const knownIds = await conversation.getKnownIds();
+            if (knownIds.userId) {
+                console.log(`✅ Found cached userId: ${knownIds.userId}`);
+                return knownIds.userId;
             }
 
             // 2. Find resolver endpoint using vector search
@@ -70,12 +71,8 @@ export class ParameterResolverService {
             if (userId) {
                 console.log(`✅ Resolved userId: ${userId}`);
 
-                // 5. Cache it
-                if (!conversation.resolvedParameters) {
-                    conversation.resolvedParameters = new Map();
-                }
-                conversation.resolvedParameters.set('userId', userId);
-                await conversation.save();
+                // 5. Cache it in knownIds (both Redis and Mongo)
+                await conversation.setKnownId('userId', userId);
 
                 return userId;
             }

@@ -58,6 +58,7 @@ export class RagOrchestrationService {
                     visitorId,
                     activeConversationId,
                     orgId,
+                    screenName: process.env.SALESIQ_SCREEN_NAME, // For proactive messaging
                     userDetails: {
                         email: webhookPayload.visitor?.email,
                         country: webhookPayload.visitor?.country,
@@ -74,6 +75,23 @@ export class RagOrchestrationService {
                     }
                 });
                 await conversation.save();
+            } else {
+                // Update conversation metadata for proactive messaging
+                conversation.activeConversationId = activeConversationId;
+                conversation.screenName = process.env.SALESIQ_SCREEN_NAME;
+                await conversation.save();
+            }
+
+            // 1.5 Check for cached pending result (from background pipeline)
+            if (this.isFollowUpQuery(userMessage)) {
+                console.log('🔍 Detected follow-up query, checking for cached result...');
+                const cachedResult = conversation.consumePendingResult();
+                if (cachedResult) {
+                    await conversation.addMessage('user', userMessage);
+                    await conversation.addMessage('bot', cachedResult);
+                    return cachedResult;
+                }
+                console.log('📭 No cached result found, proceeding with normal flow');
             }
 
             // 2. Check if message is a greeting/small talk
@@ -401,6 +419,39 @@ Only respond with valid JSON, no markdown formatting.`;
         // Case 5: Too many clarification attempts - fallback
         await conversation.resetClarificationAttempts();
         return "I'm having trouble understanding exactly what you need. Could you try rephrasing your request more specifically?";
+    }
+
+    /**
+     * Check if message is a follow-up query for cached result
+     */
+    isFollowUpQuery(message) {
+        const followUpPhrases = [
+            '?', 'ok', 'okay', 'yes', 'yeah', 'yep',
+            'continue', 'go ahead', 'what happened', 'and',
+            'done', 'finished', 'ready', 'status'
+        ];
+
+        const lowerMessage = message.toLowerCase().trim();
+
+        // Very short messages like "?" or "ok"
+        if (lowerMessage.length <= 3) {
+            return true;
+        }
+
+        // Contains follow-up phrases
+        return followUpPhrases.some(phrase => lowerMessage.includes(phrase));
+    }
+
+    /**
+     * Helper to create a timeout promise
+     */
+    timeoutAfter(ms, fallbackValue) {
+        return new Promise(resolve => {
+            setTimeout(() => {
+                console.log(`⏰ Operation timed out after ${ms}ms`);
+                resolve(fallbackValue);
+            }, ms);
+        });
     }
 
     /**

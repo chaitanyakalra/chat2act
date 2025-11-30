@@ -27,13 +27,14 @@ class GreetingService {
      */
     async generateGreeting() {
         try {
-            const prompt = `Generate ONE friendly, unique greeting message for a chatbot assistant. 
+            const prompt = `Generate ONE friendly, professional, and unique greeting message for a SaaS platform chatbot assistant. 
 The greeting should:
-- Be warm and welcoming
+- Be warm, welcoming, and professional
 - Be different each time (creative and varied)
-- Mention that the bot can help with orders, profile info, and settings
+- Mention that the bot is here to assist with any questions, account management, or platform navigation
 - Be 1-2 sentences maximum
-- Sound natural and conversational
+- Sound natural, helpful, and conversational
+- NOT mention specific features like "orders" unless they are universally applicable to SaaS
 
 IMPORTANT: Provide ONLY ONE greeting option. Do not list multiple options. Just the single greeting text.`;
 
@@ -46,7 +47,7 @@ IMPORTANT: Provide ONLY ONE greeting option. Do not list multiple options. Just 
         } catch (error) {
             console.error("⚠️  Error generating greeting:", error.message);
             // Fallback greeting
-            return "Hi there! I'm here to help you with your orders, profile, and settings. What can I do for you today?";
+            return "Hi there! I'm here to help you navigate the platform and answer any questions you may have. How can I assist you today?";
         }
     }
 }
