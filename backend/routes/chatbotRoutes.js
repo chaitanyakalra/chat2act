@@ -188,6 +188,95 @@ router.get("/webhook/salesiq/oauth/callback", async (req, res) => {
     }
 });
 
+/**
+ * Receive OAuth token from third-party SaaS (user login)
+ * POST /chatbot/webhook/salesiq/oauth/callback
+ */
+router.post("/webhook/salesiq/oauth/callback", async (req, res) => {
+    try {
+        console.log('\n📥 Received OAuth token from third-party SaaS');
+        console.log('Payload:', JSON.stringify(req.body, null, 2));
+
+        const { event, token, user, timestamp } = req.body;
+
+        // Handle token as JWT string
+        const accessToken = typeof token === 'string' ? token : token?.access_token;
+
+        if (!accessToken) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing access token'
+            });
+        }
+
+        // Extract userId from user._id
+        const userId = user?._id;
+
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required field: user._id'
+            });
+        }
+
+        // Import Organization model
+        const Organization = (await import('../models/Organization.js')).default;
+
+        // Find or create by userId
+        let organization = await Organization.findOne({ userId });
+
+        if (!organization) {
+            console.log(`📝 Creating new user entry: ${userId}`);
+            organization = new Organization({
+                userId,
+                name: user.name || user.email || userId,
+                status: 'pending'  // Pending until orgId is set from chatbot webhook
+            });
+        } else {
+            console.log(`✅ Found existing user: ${organization.name}`);
+        }
+
+        // Update OAuth credentials
+        organization.oauthCredentials = {
+            accessToken,
+            tokenType: 'Bearer',
+            expiresAt: new Date(Date.now() + 3600 * 1000)  // 1 hour default
+        };
+
+        // Store metadata
+        if (user.email) {
+            if (!organization.metadata) {
+                organization.metadata = new Map();
+            }
+            organization.metadata.set('contact_email', user.email);
+            organization.metadata.set('contact_name', user.name);
+            if (user.mobile) {
+                organization.metadata.set('contact_mobile', user.mobile);
+            }
+        }
+
+        await organization.save();
+
+        console.log(`✅ OAuth token stored for user: ${userId}`);
+        console.log(`   ⏳ Waiting for orgId from chatbot webhook...`);
+
+        res.json({
+            success: true,
+            message: 'Token stored successfully',
+            user_id: userId,
+            note: 'orgId will be set when user interacts with chatbot'
+        });
+
+    } catch (error) {
+        console.error('❌ Error processing OAuth callback:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error',
+            message: error.message
+        });
+    }
+});
+
 // Direct session parameter storage (bypasses Zoho webhook)
 router.post("/session", chatbotController.storeSessionParams);
 
