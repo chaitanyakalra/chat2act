@@ -5,6 +5,7 @@
 
 import greetingService from "../services/greetingService.js";
 import ragOrchestrationService from "../services/ragOrchestrationService.js";
+import redisSessionService from "../services/redisSessionService.js";
 
 class ChatbotController {
     constructor() {
@@ -49,33 +50,108 @@ class ChatbotController {
                 console.log("🎯 EVENT: Bot Opened (trigger)");
                 console.log(`👤 Visitor: ${visitorEmail}`);
 
+                // 1. Extract Org ID from root
+                const orgId = payload.org_id;
+
+                // 2. Extract Visitor ID (Use Email as Unique Key)
+                const visitorId = payload.visitor?.email || payload.visitor?.email_id;
+
+                // 2.5 Retrieve temporarily stored custom params (from direct API call)
+                let tempCustomParams = {};
+                if (visitorId && redisSessionService.redis) {
+                    const tempKey = `temp_session:${visitorId}`;
+                    try {
+                        const tempData = await redisSessionService.redis.get(tempKey);
+                        if (tempData) {
+                            tempCustomParams = JSON.parse(tempData);
+                            console.log(`🔄 Retrieved temp params for ${visitorId}:`, tempCustomParams);
+                            // Don't delete temp key - allow multiple chat sessions without page refresh
+                        }
+                    } catch (e) {
+                        console.warn('⚠️  Failed to retrieve temp params:', e.message);
+                    }
+                }
+
+                // 3. Dynamic Parameter Extraction
+                // CLEANER APPROACH: Only extract custom_info and essential fields
+                const sessionParams = {
+                    // Custom Parameters (Flattened for easy access)
+                    ...tempCustomParams,                 // From direct API call (priority)
+                    ...payload.visitor?.custom_info,     // From Zoho (if configured)
+                    ...payload.visitor?.info,            // Fallback
+                    ...payload.session?.variables,       // Zobot variables
+
+                    // System
+                    orgId: orgId
+                };
+
+                // Remove standard Zoho fields from sessionParams if they pollute the custom data
+                delete sessionParams.type;
+                delete sessionParams.platform;
+
+                if (visitorId && orgId) {
+                    console.log(`💾 Storing dynamic session params for ${visitorId} @ ${orgId}`);
+                    console.log(`   Params: ${JSON.stringify(sessionParams)}`);
+
+                    // Store with composite key for safety
+                    await redisSessionService.storeSession(
+                        visitorId,
+                        sessionParams,
+                        payload.chat?.chatId,
+                        null, // default TTL
+                        orgId // Pass orgId for namespacing
+                    );
+                } else {
+                    console.warn('⚠️  Missing visitor.id or org_id in trigger payload');
+                }
+
                 const greeting = await greetingService.generateGreeting();
-
-                console.log(`🤖 Response: "${greeting}"\n`);
-
-                return res.json({
-                    replies: [{ text: greeting }]
-                });
+                return res.json({ replies: [{ text: greeting }] });
             }
 
             // Handle message event (user sent a message)
             if (handler === "message" && payload.operation === "chat") {
                 console.log("🎯 EVENT: User Message");
-                console.log(`👤 Visitor: ${visitorEmail}`);
-                console.log(`💬 Message: "${userMessage}"`);
 
-                // Use RAG orchestration for intelligent routing
-                console.log("\n🧠 Starting RAG Orchestration...");
+                const orgId = payload.org_id;
+                // Use Email as Unique Key (same as trigger)
+                const visitorId = payload.visitor?.email || payload.visitor?.email_id;
+
+                let cachedParams = {};
+
+                if (visitorId && orgId) {
+                    // Retrieve using the same composite logic
+                    cachedParams = await redisSessionService.getSession(visitorId, orgId) || {};
+                    console.log(`🔍 Retrieved cached params: ${Object.keys(cachedParams).join(', ')}`);
+                }
+
+                // Dynamic Enrichment: Merge payload params with cached params
+                // Payload params take precedence if they are newer updates
+                const currentSessionParams = payload.session || {};
+
+                const enrichedPayload = {
+                    ...payload,
+                    // Create a consolidated 'context' object for the RAG service
+                    context: {
+                        ...cachedParams,
+                        ...currentSessionParams,
+                        orgId: orgId
+                    },
+                    // Keep backward compatibility for specific fields if RAG service expects them at root
+                    orgId: orgId,
+                    visitor: {
+                        ...payload.visitor,
+                        params: { ...cachedParams, ...currentSessionParams }
+                    }
+                };
+
+                // Pass to RAG orchestration
                 const response = await ragOrchestrationService.processMessage(
                     userMessage,
-                    payload
+                    enrichedPayload
                 );
 
-                console.log(`🤖 Response: "${response}"\n`);
-
-                return res.json({
-                    replies: [{ text: response }]
-                });
+                return res.json({ replies: [{ text: response }] });
             }
 
             // Unhandled event type
@@ -91,6 +167,48 @@ class ChatbotController {
 
             res.status(500).json({
                 replies: [{ text: "Sorry, something went wrong. Please try again." }]
+            });
+        }
+    }
+
+    /**
+     * Store session parameters directly from frontend (bypasses Zoho)
+     * Frontend sends only custom_params + email
+     * These are stored temporarily until the trigger event provides org_id
+     */
+    async storeSessionParams(req, res) {
+        try {
+            const { email, custom_params } = req.body;
+
+            // Validation
+            if (!email) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'email is required'
+                });
+            }
+
+            console.log(`📥 Direct session params received for ${email}`);
+            console.log(`   Params: ${JSON.stringify(custom_params)}`);
+
+            // Store temporarily with email as key (will be re-stored with org_id in trigger event)
+            // Using a temporary key format: temp_session:{email}
+            const tempKey = `temp_session:${email}`;
+
+            if (redisSessionService.redis) {
+                await redisSessionService.redis.setex(tempKey, 300, JSON.stringify(custom_params)); // 5 min TTL
+                console.log(`✅ Temporarily stored params with key: ${tempKey}`);
+            } else {
+                console.warn('⚠️  Redis not available, params not stored');
+            }
+
+            res.json({ success: true });
+
+        } catch (error) {
+            console.error('❌ Error storing session params:', error);
+            res.status(500).json({
+                success: false,
+                error: error.message
             });
         }
     }

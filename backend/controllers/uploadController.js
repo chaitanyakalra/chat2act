@@ -53,7 +53,6 @@ export const uploadDoc = async (req, res) => {
         } else {
             return res.status(400).json({ message: "Unsupported file format. Supported: JSON, YAML, PDF" });
         }
-
         // Extract title from the API spec if possible
         let title = null;
         try {

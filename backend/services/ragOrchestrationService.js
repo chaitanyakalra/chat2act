@@ -35,12 +35,15 @@ export class RagOrchestrationService {
      */
     async processMessage(userMessage, webhookPayload) {
         try {
+            // Extract from enriched payload (with Redis cached params)
             const visitorId = webhookPayload.visitor?.email || webhookPayload.visitor?.active_conversation_id;
-            const orgId = webhookPayload.org_id;
+            const orgId = webhookPayload.orgId || webhookPayload.org_id; // Use cached orgId first
             const activeConversationId = webhookPayload.visitor?.active_conversation_id;
 
             if (!visitorId || !orgId) {
                 console.error('Missing visitorId or orgId from webhook');
+                console.error('visitorId:', visitorId, 'orgId:', orgId);
+                console.error('Payload:', JSON.stringify(webhookPayload, null, 2));
                 return "Sorry, I'm having trouble identifying you. Please try again.";
             }
 
