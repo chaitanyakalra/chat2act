@@ -68,6 +68,32 @@ class ChatbotController {
                 // 2. Extract Visitor ID (Use Email as Unique Key)
                 const visitorId = payload.visitor?.email || payload.visitor?.email_id;
 
+                // 2.1 Link user to organization using orgId from webhook
+                if (visitorId && orgId) {
+                    try {
+                        const Organization = (await import('../models/Organization.js')).default;
+
+                        // Try to find organization by visitor email (stored as userId)
+                        // The userId might be the MongoDB _id from third-party login
+                        // We'll also check by email in metadata
+                        let organization = await Organization.findOne({
+                            'metadata.contact_email': visitorId
+                        });
+
+                        if (organization && !organization.orgId) {
+                            // Found user entry from third-party login, now set orgId
+                            organization.orgId = orgId;
+                            organization.status = 'active';
+                            await organization.save();
+                            console.log(`✅ Linked user ${visitorId} to org ${orgId}`);
+                        } else if (organization && organization.orgId !== orgId) {
+                            console.log(`⚠️  User ${visitorId} already linked to org ${organization.orgId}`);
+                        }
+                    } catch (error) {
+                        console.error('❌ Error linking user to organization:', error);
+                    }
+                }
+
                 // 2.5 Retrieve temporarily stored custom params (from direct API call)
                 let tempCustomParams = {};
                 if (visitorId && redisSessionService.redis) {

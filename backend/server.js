@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 import uploadRoutes from "./routes/uploadRoutes.js";
 import processingRoutes from "./routes/processingRoutes.js";
 import chatbotRoutes from "./routes/chatbotRoutes.js";
+import organizationRoutes from "./routes/organizationRoutes.js";
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use(express.json());
 app.use("/api/upload-doc", uploadRoutes);
 app.use("/api/processing", processingRoutes);
 app.use("/chatbot", chatbotRoutes);
+app.use("/api/organization", organizationRoutes);
 
 // Legacy SalesIQ webhook endpoint
 app.post("/salesiq-webhook", (req, res, next) => {

@@ -9,8 +9,14 @@ const organizationSchema = new mongoose.Schema({
     // Zoho Organization ID (used as Pinecone namespace)
     orgId: {
         type: String,
-        required: true,
-        unique: true,
+        required: false,  // Will be filled when chatbot webhook arrives
+        index: true       // Not unique! Multiple users can belong to same org
+    },
+
+    // Individual user ID from third-party SaaS
+    userId: {
+        type: String,
+        required: false,
         index: true
     },
 
