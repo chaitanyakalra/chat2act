@@ -1,0 +1,8 @@
+# pack-refs with: peeled fully-peeled sorted 
+5197f9832bd28d5887b3172194ab17fb85f5a61f refs/heads/ashu
+7e7169abdd729d4ea166ad9da1c4f98f10d7a084 refs/heads/kalla
+e3561c5e18a6141561d4c3c5d53f4a6a60623eeb refs/heads/kalla2
+2b4e319fed71d2717ade573f5ea2633c4bf24a1c refs/heads/kalla3
+1c79cdb1b7d244ddfd813e80cab749ebbfa3b7bb refs/heads/kalra
+2b4e319fed71d2717ade573f5ea2633c4bf24a1c refs/heads/kalra2
+aed47fd20ed4d305bf5bb5838b9bb5f15eb3ba22 refs/heads/main
