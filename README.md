@@ -111,7 +111,7 @@ Chat2Act consists of two major architectural components:
 
 ### 1️⃣ Real-time Chat Message Processing Flow
 
-![Chat Processing Flow](./assets/chat-processing-flow.png)
+![Chat Processing Flow](./assets/chat-processing-flow.jpeg)
 
 This diagram illustrates how user messages from **Zoho SalesIQ Chat** are processed in real-time:
 
@@ -156,7 +156,7 @@ This diagram illustrates how user messages from **Zoho SalesIQ Chat** are proces
 
 ### 2️⃣ Admin Portal & Document Processing Architecture
 
-![Admin Portal Architecture](./assets/admin-portal-architecture.png)
+![Admin Portal Architecture](./assets/admin-portal-architecture.jpeg)
 
 This diagram shows how **SaaS companies** onboard and how their API documentation is processed:
 
