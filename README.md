@@ -105,6 +105,118 @@ The system automatically:
 
 ---
 
+## 🏗️ Architecture Overview
+
+Chat2Act consists of two major architectural components:
+
+### 1️⃣ Real-time Chat Message Processing Flow
+
+![Chat Processing Flow](./assets/chat-processing-flow.png)
+
+This diagram illustrates how user messages from **Zoho SalesIQ Chat** are processed in real-time:
+
+#### Flow Description:
+
+1. **Entry Point**: User sends a message via **SalesIQ Chat**
+2. **Webhook Reception**: Message is received by the **Express Server** via POST webhook
+3. **Handler Type Detection**: System determines if it's a:
+   - **Trigger** (new conversation start) → Routes to **Welcome Message**
+   - **Message** (user query) → Routes to **SalesIQ Controller**
+
+4. **Parallel Processing Branches**:
+
+   **Branch A: Conversation Management**
+   - **Conversation Service** → Manages conversation state
+   - **MongoDB - ConversationState** → Stores conversation context and history
+   
+   **Branch B: AI Intent Processing**
+   - **Intent Classification Service** → Identifies user intent
+   - **Gemini AI** → Powers the intent understanding
+   
+   **Branch C: API Execution**
+   - **OAuth Service** → Handles authentication with SaaS platforms
+   - **MongoDB - UserToken** → Stores OAuth tokens securely
+   - **External SaaS API** → Executes real API calls
+   
+   **Branch D: Action Processing**
+   - **API Execution Service** → Orchestrates API calls based on identified intent
+
+5. **Response**: Formatted response is sent back to **SalesIQ Chat**
+
+#### Key Components:
+- **Express Server**: Fast API gateway handling webhooks
+- **Handler Type Logic**: Smart routing for triggers vs. messages
+- **Conversation Service**: Maintains multi-turn conversation context
+- **Intent Classification**: AI-powered understanding of user goals
+- **Gemini AI**: LLM for natural language understanding
+- **OAuth Service**: Secure token management for third-party API access
+- **API Execution Service**: Translates intent into real API calls
+
+---
+
+### 2️⃣ Admin Portal & Document Processing Architecture
+
+![Admin Portal Architecture](./assets/admin-portal-architecture.png)
+
+This diagram shows how **SaaS companies** onboard and how their API documentation is processed:
+
+#### Flow Description:
+
+1. **Admin Portal (Frontend)**:
+   - SaaS company admins access the React-based portal
+   - Upload API documentation (OpenAPI, Swagger, Postman, GraphQL schemas)
+
+2. **Backend Server (Core API)**:
+   - Built with **Node.js / FastAPI**
+   - Orchestrates all document processing workflows
+
+3. **Storage & Processing Layer** (Parallel Processing):
+
+   **Path A: File Handling**
+   - **File Processor (S3 Uploads)** → Stores original documentation files
+   
+   **Path B: AI Document Parsing**
+   - **LLM Doc Parser (GPT/Claude)** → Extracts endpoints, parameters, schemas
+   - Generates business tags and intent mappings
+   
+   **Path C: Organization Setup**
+   - **Organization Data Manager** → Handles configs, OAuth tokens, organization logos
+   - Stores in MongoDB
+
+4. **Vector Database (Pinecone/Weaviate)**:
+   - All parsed endpoints are embedded as 768-dimensional vectors
+   - Enables semantic search for intent matching
+
+5. **AI Processing Pipeline**:
+   
+   **Step 1: Intent + Endpoint Matching**
+   - **AI Intent + Endpoint Matching Engine** → Uses vector similarity to match user queries to relevant endpoints
+   
+   **Step 2: Planning**
+   - **Action Execution Planner** → Constructs the API call with correct parameters
+   
+   **Step 3: Execution**
+   - **SaaS Platform API Executor** → Makes the actual API call to the customer's platform
+
+6. **Feedback Loop**:
+   - Execution results are logged back to the **Organization Data Manager**
+   - Used for continuous improvement and debugging
+
+7. **Zobot Webhook Response Layer**:
+   - Formats execution results for Zoho SalesIQ
+   - Sends webhook responses back to the user via **User (Zoho SalesIQ)**
+
+#### Key Components:
+- **Admin Portal**: Self-service UI for SaaS companies
+- **File Processor**: Handles S3 uploads for documentation storage
+- **LLM Doc Parser**: Uses GPT/Claude to intelligently parse API docs
+- **Vector Database**: Semantic search backbone (Pinecone or Weaviate)
+- **AI Matching Engine**: Finds the right endpoint for any user query
+- **Action Planner**: Smart parameter extraction and payload construction
+- **API Executor**: Executes real API calls on behalf of users
+
+---
+
 ## 🛠️ Tech Stack
 
 ### Frontend
